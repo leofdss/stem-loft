@@ -14,6 +14,38 @@ aparecem.
 Não pule etapas. Não invente conteúdo que não esteja no arquivo `.canvas`: o documento
 final deve ser rastreável 1:1 aos nós e arestas do canvas.
 
+## Use o script primeiro — não faça a parte mecânica de cabeça
+
+Este diretório tem um conversor determinístico, `convert.ts`, que já implementa os
+Passos 0–6 e a checklist do Passo 8 (containment geométrico, classificação de nós,
+geração de IDs/slugs, escaping, orientação do diagrama, tabelas). **Rode-o antes de
+tentar fazer qualquer parte disso por interpretação própria** — contas de geometria,
+escaping e unicidade de ID são exatamente o tipo de coisa que um modelo (simples ou
+não) erra por distração, e o script nunca erra isso.
+
+```bash
+node <diretório-desta-skill>/convert.ts <entrada.canvas> [saida.md]
+```
+
+- Requer Node.js 22.6+ (roda `.ts` nativamente, sem instalar nada). Se o ambiente não
+  suportar, tente `npx tsx <diretório-desta-skill>/convert.ts ...`.
+- Se `saida.md` for omitido, o script grava ao lado do `.canvas` de entrada, mesmo nome
+  com extensão `.md`.
+- O script imprime no terminal um relatório: quantos grupos/nós/blocos descritivos e
+  quantas arestas foram traduzidas, mais avisos (`AVISO: ...`) para coisas que exigem
+  uma decisão sua — aresta apontando para um nó inexistente (provável erro no canvas
+  original: avise o usuário), grupo vazio, mais de um bloco descritivo. **Leia esse
+  relatório antes de considerar a tarefa concluída.**
+- O script **não** gera o Passo 7 (diagramas de sequência) — isso continua sendo
+  opcional e manual, só quando fizer sentido (ver abaixo).
+- Depois de rodar, abra o `.md` gerado e confira se o conteúdo faz sentido antes de
+  entregar. Se o script falhar (canvas em formato que ele não reconhece, erro de
+  parsing), só então recorra ao algoritmo manual descrito nos passos abaixo — eles
+  documentam exatamente a mesma lógica que o script implementa, para quando não há
+  como rodar código.
+
+## Algoritmo manual (o que o script faz por baixo dos panos / fallback sem Node)
+
 ## Passo 0 — Ler o arquivo e entender o formato
 
 Um `.canvas` é um JSON puro com esta forma:
@@ -94,8 +126,8 @@ documento.
 
 ## Passo 3 — Montar as tabelas de componentes (uma por grupo)
 
-Para cada grupo (na ordem em que preferir, mas mantenha consistência), gere uma seção
-`### <label do grupo>` com uma tabela:
+Para cada grupo de nível raiz, gere uma seção `## <label do grupo>` com uma tabela
+(grupos aninhados descem um nível de heading cada, `###`, `####`, ...):
 
 | Componente | Descrição |
 |---|---|

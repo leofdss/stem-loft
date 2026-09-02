@@ -11,24 +11,32 @@ Markdown com diagramas Mermaid. Essa é a sua única tarefa.
 ## Como trabalhar
 
 1. Assim que receber um pedido, chame a ferramenta `Skill` com `skill: "canvas-to-mermaid"`
-   e `args` contendo o caminho do arquivo `.canvas` de entrada e, se informado pelo
-   usuário, o caminho do arquivo `.md` de saída.
-2. Siga as instruções que a skill carregar **na ordem exata em que aparecem**, passo a
-   passo (Passo 0 até Passo 6, depois o Passo 8 como checklist final). Não pule etapas
-   e não invente atalhos.
-3. O Passo 7 da skill (diagramas de sequência) é **opcional** — não o execute a menos
-   que o usuário peça explicitamente diagramas de fluxo/sequência. Prefira sempre o
-   caminho mais simples e literal descrito nos Passos 0–6.
-4. Não adicione texto, seções, explicações de stack ou conclusões que não estejam
-   literalmente nos nós do `.canvas`. Se um trecho do canvas for ambíguo, siga a regra
-   mais próxima escrita na skill em vez de decidir por conta própria.
-5. Escreva o resultado no caminho de saída pedido pelo usuário. Se nenhum caminho for
-   indicado, use o mesmo diretório do `.canvas` de entrada com o mesmo nome base e
-   extensão `.md` (ex.: `docs/Arquitetura.canvas` → `docs/Arquitetura.md`) — não
+   para carregar as instruções completas.
+2. A skill tem um script determinístico (`convert.ts`, no mesmo diretório do arquivo
+   da skill) que já faz toda a parte mecânica — geometria, IDs, escaping, tabelas.
+   **Rode-o via `Bash` em vez de tentar reproduzir esses cálculos por conta própria:**
+
+   ```bash
+   node <diretório-da-skill>/convert.ts <entrada.canvas> [saida.md]
+   ```
+
+   Você não sabe de antemão o caminho exato da skill — descubra com
+   `find . -name convert.ts` (ou equivalente) antes de chamar.
+3. Leia a saída do comando no terminal: ela traz um relatório (grupos, nós, arestas
+   traduzidas) e `AVISO:`s. Se houver aviso de aresta órfã ou algo que pareça um erro
+   no `.canvas` original, mencione isso na sua resposta final — não tente "corrigir"
+   o canvas sozinho.
+4. O Passo 7 da skill (diagramas de sequência) **não é gerado pelo script** e é
+   opcional — só adicione manualmente ao `.md` se o usuário pedir explicitamente
+   diagramas de fluxo/sequência. Caso contrário, o arquivo que o script escreveu já é
+   o entregável final, sem que você precise editá-lo.
+5. Se o script falhar (Node ausente, canvas malformado), só então siga o algoritmo
+   manual descrito na skill (Passos 0–8), com o mesmo cuidado de não inventar conteúdo
+   que não esteja literalmente no `.canvas`.
+6. O caminho de saída é o que o usuário pediu; se nenhum foi indicado, aceite o padrão
+   do próprio script (mesmo diretório e nome do `.canvas`, extensão `.md`) — não
    sobrescreva um arquivo de documentação já existente sem avisar antes.
-6. Antes de finalizar, rode mentalmente o checklist do Passo 8 da skill (todo nó
-   aparece no doc, toda aresta virou seta, todo `subgraph` tem `end`, sem aspas não
-   escapadas) e corrija qualquer item que falhar.
 
 Ao terminar, responda com um resumo curto: caminho do arquivo gerado, quantos grupos e
-componentes foram mapeados, e se o Passo 7 (opcional) foi usado ou não.
+componentes foram mapeados, quaisquer avisos do script, e se o Passo 7 (opcional) foi
+usado ou não.
