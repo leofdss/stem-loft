@@ -55,7 +55,7 @@ flowchart LR
 
     SESSION --> SEPCLIENT
     SEPCLIENT -- HTTP --> API
-    API -- "stems gerados" --> IMPORT
+    SEPCLIENT -- "stems gerados" --> IMPORT
 
     SESSION --> PERSIST
     SESSION --> IMPORT
@@ -94,15 +94,29 @@ Contém toda a lógica de domínio do aplicativo, sem dependência da interface 
 |---|---|
 | **Gerenciador de Sessão / Estado** | Guarda **apenas** a referência ao projeto atualmente aberto (qual projeto, quais caminhos de stems/`.cho`) — não contém lógica de domínio própria. É o ponto de entrada dos `Commands`, mas cada Command é despachado para o módulo dono do domínio (Importador, Motor de Áudio, Loops, Metadados, Persistência), que executa a operação; a Sessão só lê/atualiza o estado compartilhado que esses módulos consultam. Ver [nota de design](#nota-de-design-sessão-como-roteador-fino). |
 | **Importador de Stems** | Recebe arquivos de stem (locais ou vindos da separação automática) e os grava no sistema de arquivos do projeto. |
-| **Cliente de Separação** (futuro) | Adapter que fala HTTP com a API externa de separação de stems, encapsulando a integração do restante do núcleo com esse serviço. |
+| **Cliente de Separação** (futuro) | Adapter que fala HTTP com a API externa de separação de stems, encapsulando a integração do restante do núcleo com esse serviço; recebe a resposta da API e encaminha os stems para o Importador — nada no resto do núcleo fala HTTP diretamente com a API. |
 | **Gerenciador de Loops e Marcadores** | Mantém marcador inicial/final do trecho em loop e alimenta o motor de áudio com essa informação para repetição contínua. |
-| **Motor de Áudio** | Decodifica, mixa e reproduz os stems; aplica o loop marcado e os estados de volume/mute/solo; emite eventos de progresso/transporte. |
+| **Motor de Áudio** | Decodifica, mixa e reproduz os stems; aplica o loop marcado e os estados de volume/mute/solo; pré-calcula a waveform uma vez por stem; emite eventos de progresso/transporte/waveform e de erro (dispositivo de saída, decodificação). Ver [nota de design](#nota-de-design-motor-de-áudio-e-a-thread-de-tempo-real) sobre a fronteira com a thread de tempo real do `cpal`. |
 | **Persistência de Projetos** | Serializa/lê o estado do projeto (stems, marcadores, mixagem) como arquivo `.json`, incluindo a referência ao arquivo `.cho` de metadados de partitura. |
 | **Gerenciador de Metadados de Partitura** | Faz o parsing do arquivo `.cho` (ChordPro) referenciado pelo projeto — acordes, tablatura, letra, metrônomo e afinação — e expõe o resultado à UI via `Events` para exibição sincronizada com a timeline. |
 
 #### Nota de design: Sessão como roteador fino
 
 `Gerenciador de Sessão / Estado` existe pra resolver um problema específico — "qual projeto está aberto agora" — não pra acumular lógica de cada feature nova. A regra prática: um `Command` novo ganha seu handler no módulo dono do domínio (ex.: `definir_marcadores` mexe só no `Gerenciador de Loops`); a Sessão só entra se o handler precisar saber qual projeto está ativo. Se um handler começar a coordenar mais de um módulo com lógica própria (não só repassar dados), é sinal de que essa lógica pertence a um módulo novo — não à Sessão. Isso evita que ela vire um *god object* conforme o número de `Commands` cresce.
+
+#### Nota de design: Motor de Áudio e a thread de tempo real
+
+O callback de áudio do `cpal` roda em uma thread de tempo real: nada que aloque, bloqueie em lock ou faça I/O pode rodar dentro dele — um único underrun já é audível como um glitch. Isso implica uma fronteira dentro do próprio `Motor de Áudio` que a tabela de componentes não expressa por ser um C4 de módulos, não de threads:
+
+- **Decodificação** (ler o arquivo do stem, decodificar pra PCM) acontece fora do callback, adiantada — resultado fica num buffer (ring buffer ou similar) já pronto pra ser lido.
+- **Dentro do callback** só acontece leitura desse buffer, mixagem das amostras (aplicando volume/mute/solo já resolvidos) e o wraparound do loop (voltar ao início do buffer ao atingir o marcador final) — nenhuma dessas operações decodifica ou lê disco.
+- Mudanças de volume/mute/solo feitas pela UI (via `Command`) escrevem em uma variável compartilhada lida pelo callback (ex.: atômica, ou double-buffer) — nunca um `Mutex` que o callback possa ficar esperando.
+
+Essa separação é uma restrição de implementação do módulo `Motor de Áudio`, não um novo componente arquitetural — não muda a tabela nem o diagrama, só como o código dentro do módulo deve ser organizado.
+
+#### Nota de design: quando `Persistência de Projetos` grava
+
+`Mixer de Stems` gera `Commands` a cada tick de um fader sendo arrastado — gravar o `.json` do projeto a cada um deles seria descarte de I/O e risco de escritas concorrentes/parciais no mesmo arquivo. `Persistência de Projetos` não escreve a cada `Command` que muda estado: mudanças marcam o projeto como "sujo" e a escrita em disco acontece em checkpoints — debounce de inatividade (ex.: alguns milissegundos sem novos `Commands`) ou eventos definitivos (pausar playback, fechar o projeto). Ler o projeto continua imediato; só a escrita é agrupada.
 
 ### Ponte de Comunicação — Tauri IPC
 
@@ -111,18 +125,22 @@ Interface entre a WebView (Angular) e o núcleo Rust.
 | Componente | Responsabilidade |
 |---|---|
 | **Commands (Angular → Rust)** | Chamadas da UI para o núcleo: abrir/criar projeto, importar stems, alterar mixer, transporte (play/pause/stop), definir marcadores de loop, disparar separação automática. |
-| **Events (Rust → Angular)** | Canal **multi-produtor**: `Motor de Áudio` publica progresso de playback/transporte; `Gerenciador de Metadados de Partitura` publica acordes/tablatura/letra interpretados. Não é "o canal do motor de áudio" — é um barramento de notificações do núcleo, com mais de uma origem. Ver [tabela de eventos](#tabela-de-eventos) abaixo. |
+| **Events (Rust → Angular)** | Canal **multi-produtor**: `Motor de Áudio` publica progresso/transporte/waveform/erro de playback; `Gerenciador de Metadados de Partitura` publica acordes/tablatura/letra interpretados. Não é "o canal do motor de áudio" — é um barramento de notificações do núcleo, com mais de uma origem. Ver [tabela de eventos](#tabela-de-eventos) abaixo. |
 
 #### Tabela de eventos
 
 | Evento | Produtor | Payload essencial | Consumidor(es) |
 |---|---|---|---|
-| `playback_progress` | Motor de Áudio | posição atual (segundos), amostra de waveform | Linha do Tempo, Visualização de Acordes/Tablatura |
+| `playback_progress` | Motor de Áudio | posição atual (segundos) | Linha do Tempo, Visualização de Acordes/Tablatura |
+| `waveform_ready` | Motor de Áudio | picos de amplitude (waveform) do stem, pré-calculados uma vez ao importar/abrir o projeto | Linha do Tempo |
 | `transport_state_changed` | Motor de Áudio | estado (`playing` / `paused` / `stopped`) | Controles de Transporte |
+| `audio_error` | Motor de Áudio | causa (`device_unavailable`, `decode_failed`, ...) e mensagem | Controles de Transporte (estado de erro) |
 | `score_loaded` | Gerenciador de Metadados de Partitura | acordes, tablatura e letra interpretados, mais `tempo`/`time`/`tuning` do cabeçalho do `.cho` | Visualização de Acordes/Tablatura |
 | `score_parse_error` | Gerenciador de Metadados de Partitura | mensagem de erro e linha do `.cho` onde ocorreu | Visualização de Acordes/Tablatura (estado de erro) |
 
 Cada evento carrega sua própria origem — a UI nunca precisa adivinhar quem publicou o quê, só assinar o tipo de evento que interessa.
+
+`waveform_ready` é separado de `playback_progress` de propósito: waveform é um dado estático (calculado uma vez a partir do arquivo decodificado) enquanto posição muda a cada tick de playback — despachar o mesmo array de picos a cada `playback_progress` seria repetir, por IPC, um dado que não mudou (a mesma categoria de redundância já evitada em `ChordBeatStream`, ver [nota abaixo](#estado-visual-em-tempo-real-angular)). `audio_error` cobre falhas do dispositivo de saída ou de decodificação de um stem — sem ele, só `Gerenciador de Metadados de Partitura` tinha um canal de erro dedicado (`score_parse_error`), deixando o Motor de Áudio sem forma de reportar falha além de simplesmente não emitir mais eventos.
 
 ### Camada de Apresentação — Angular (WebView do Tauri)
 
@@ -147,6 +165,16 @@ Cada evento carrega sua própria origem — a UI nunca precisa adivinhar quem pu
 | Componente | Responsabilidade |
 |---|---|
 | **API de Separação de Stems** (futuro) | Serviço externo, acessado via HTTP pelo Cliente de Separação, que recebe uma faixa completa e devolve os stems separados. |
+
+## Consistência entre stems de um projeto
+
+Stems de uma mesma música podem vir de exportações diferentes e não são garantidamente idênticos em sample rate ou duração exata. Duas regras resolvem isso na fronteira onde os arquivos entram no projeto, em vez de deixar o Motor de Áudio decidir isso a cada playback:
+
+- **Sample rate**: `Importador de Stems` valida, no momento da importação, que todos os stems de um mesmo projeto compartilham o mesmo sample rate. Um stem com sample rate diferente dos já importados é rejeitado com erro explícito — o app não resampleia silenciosamente.
+- **Duração**: pequenas diferenças de duração entre stems são esperadas e não são erro. `Importador de Stems` lê a duração de cada stem (do cabeçalho do arquivo, sem decodificar o áudio inteiro) e grava em `stems[].durationSec` no `.json` do projeto (ver [schema](#versionamento-do-projeto)). A duração do projeto é a do stem mais longo; ao mixar, `Motor de Áudio` trata os stems mais curtos como silêncio depois do fim de cada um.
+- **Marcadores de loop**: `definir_marcadores` valida `endSec` contra a duração do projeto (o maior `durationSec` entre os stems) — um marcador além disso é rejeitado, não silenciosamente truncado.
+
+Guardar `durationSec` na importação também resolve uma dependência que faltava no diagrama: a regra de fechamento do último acorde (abaixo) precisa da duração do stem mais longo, mas nada ligava `Motor de Áudio` a `Gerenciador de Metadados de Partitura`. Com a duração persistida no `.json` do projeto, `Gerenciador de Metadados de Partitura` lê `stems[].durationSec` (via `Persistência de Projetos`/estado da Sessão) — não precisa decodificar áudio nem depender do Motor de Áudio.
 
 ## Metadados de partitura (acordes, tablatura e letra)
 
@@ -212,7 +240,7 @@ Regras de validação (o parser deve rejeitar ou avisar):
 
 Duas bordas precisam de regra explícita:
 
-- **Último acorde do arquivo:** não existe "próximo evento" — o `endSec` é a duração do stem mais longo do projeto. Pra fechar antes disso, adicione uma linha final só com `{t: ...}` e um `[acorde]` marcando onde o último acorde termina (ex.: repetindo o mesmo nome, só pra fechar a janela).
+- **Último acorde do arquivo:** não existe "próximo evento" — o `endSec` é o maior `stems[].durationSec` do projeto (ver [Consistência entre stems](#consistência-entre-stems-de-um-projeto)), lido do `.json` do projeto, não decodificado na hora. Pra fechar antes disso, adicione uma linha final só com `{t: ...}` e um `[acorde]` marcando onde o último acorde termina (ex.: repetindo o mesmo nome, só pra fechar a janela).
 - **Origem da grade (compasso 1, batida 1):** é o **primeiro `{t:}` do arquivo**, não necessariamente o segundo 0 do áudio — uma introdução/contagem antes da primeira linha ancorada fica fora da numeração de compassos, e tudo bem: `Linha do Tempo` continua mostrando esse trecho normalmente, só não tem "compasso N" associado até a primeira âncora.
 - **Tempo dentro de um `{start_of_tab}`:** o bloco tem uma única âncora `{t:}` no início; a posição de cada nota dentro dele é proporcional à posição do caractere na linha — `notaSec = startSec + (coluna / totalDeColunas) × (endSec − startSec)`, usando o mesmo `endSec` (próximo evento que muda o que está soando) e o comprimento da linha de tab (todas as 6 cordas têm o mesmo número de colunas). Não precisa de uma âncora por nota.
 
@@ -293,10 +321,10 @@ O `.json` do projeto é schema nosso, sem essa tolerância nativa — precisa de
   "id": "b3a1e6c2-8f21-4d9a-9c3e-1a2b3c4d5e6f",
   "name": "Estudo em Sol Maior",
   "stems": [
-    { "id": "violao", "file": "violao.wav" },
-    { "id": "vocal", "file": "vocal.wav" },
-    { "id": "baixo", "file": "baixo.wav" },
-    { "id": "bateria", "file": "bateria.wav" }
+    { "id": "violao", "file": "violao.wav", "durationSec": 187.42 },
+    { "id": "vocal", "file": "vocal.wav", "durationSec": 187.42 },
+    { "id": "baixo", "file": "baixo.wav", "durationSec": 186.90 },
+    { "id": "bateria", "file": "bateria.wav", "durationSec": 187.42 }
   ],
   "score": "estudo-sol-maior.cho",
   "loop": { "startSec": 0.0, "endSec": 12.0 },
@@ -307,7 +335,7 @@ O `.json` do projeto é schema nosso, sem essa tolerância nativa — precisa de
 }
 ```
 
-`score` é opcional — um projeto sem partitura só reproduz e faz loop dos stems normalmente, sem `Visualização de Acordes/Tablatura`. `stems` são objetos com `id` estável, não só o nome do arquivo: `mixer` é indexado por `stems[].id`, então renomear `violao.wav` não orfaniza a configuração de volume/mute/solo — só o campo `file` muda.
+`score` é opcional — um projeto sem partitura só reproduz e faz loop dos stems normalmente, sem `Visualização de Acordes/Tablatura`. `stems` são objetos com `id` estável, não só o nome do arquivo: `mixer` é indexado por `stems[].id`, então renomear `violao.wav` não orfaniza a configuração de volume/mute/solo — só o campo `file` muda. `durationSec` é escrito por `Importador de Stems` na importação (lido do cabeçalho do arquivo, sem decodificar) e é a fonte da duração do projeto e do fechamento do último acorde — ver [Consistência entre stems](#consistência-entre-stems-de-um-projeto).
 
 `Persistência de Projetos` lê `schemaVersion` antes de qualquer outra coisa: mesma versão → carrega direto; versão menor → aplica migrações registradas em sequência (cada uma sabe transformar `N` → `N+1`) antes de expor o projeto ao resto do núcleo; versão maior que a suportada → erro explícito ("projeto salvo por uma versão mais nova do app"), nunca uma tentativa silenciosa de leitura parcial.
 
@@ -427,14 +455,17 @@ sequenceDiagram
     CMD->>SESSION: definir_marcadores(inicio, fim)
     SESSION->>LOOPMGR: atualizar(inicio, fim)
 
+    Note over AUDIO,EVT: Ao decodificar o stem (uma vez),\nAUDIO já emitiu "waveform_ready".
+    EVT-->>TIMELINE: waveform (picos), uma vez
+
     Usuário->>TRANSPORT: Play
     TRANSPORT->>CMD: comando "play"
     CMD->>SESSION: play()
     SESSION->>AUDIO: iniciar playback com loop ativo
     LOOPMGR-->>AUDIO: limites do loop
     AUDIO->>OS: stream de áudio mixado
-    AUDIO->>EVT: progresso de playback
-    EVT-->>TIMELINE: atualiza posição/waveform
+    AUDIO->>EVT: emite "playback_progress" (positionSec)
+    EVT-->>TIMELINE: atualiza posição
     EVT-->>TRANSPORT: atualiza estado (playing)
 
     Note over AUDIO: Ao atingir o marcador final,\no motor volta ao marcador inicial\ne continua o playback.
@@ -463,9 +494,9 @@ sequenceDiagram
         Note over CHORDVIEW: resto do app (stems, loop,\nwaveform) continua normalmente
     end
 
-    Note over TIMELINE,CHORDVIEW: Durante o playback, ambos\nescutam "playback_progress".
+    Note over TIMELINE,CHORDVIEW: Durante o playback, ambos\nescutam "playback_progress" (a waveform\njá chegou uma vez via "waveform_ready").
     AUDIO->>EVT: emite "playback_progress" (positionSec)
-    EVT-->>TIMELINE: atualiza posição/waveform
+    EVT-->>TIMELINE: atualiza posição
     EVT-->>CHORDVIEW: positionSec
     CHORDVIEW->>CHORDVIEW: recalcula ChordBeatStream\n(activeChord/activeBeat) e destaca
 ```
@@ -474,4 +505,4 @@ sequenceDiagram
 
 - **Em desenvolvimento agora:** Gerenciador de Sessão / Estado, e por extensão os fluxos que ele orquestra diretamente (importação manual, persistência, motor de áudio, loops/marcadores, mixer, transporte, timeline).
 - **Metadados de partitura:** Gerenciador de Metadados de Partitura e Visualização de Acordes/Tablatura mapeiam acordes, tablatura, letra, metrônomo e afinação persistidos junto do projeto (arquivo `.cho`, opcional por projeto), exibidos sincronizados com a timeline — não marcados como "futuro" no canvas, entram junto do desenvolvimento atual.
-- **Planejado para o futuro:** separação automática de stems, tanto na ponta da UI ("Separação Automática") quanto no núcleo ("Cliente de Separação") e no serviço externo ("API de Separação de Stems"), integrando-se ao fluxo de importação já existente.
+- **Planejado para o futuro:** separação automática de stems, tanto na ponta da UI ("Separação Automática") quanto no núcleo ("Cliente de Separação") e no serviço externo ("API de Separação de Stems"), integrando-se ao fluxo de importação já existente. O sequence diagram acima simplifica a chamada como uma requisição HTTP síncrona; separação real tende a levar minutos, então a implementação vai precisar de um padrão assíncrono (job com polling ou webhook, e eventos de progresso próprios) em vez de uma chamada request/response direta — este documento não define esse padrão ainda porque a feature não está em desenvolvimento.
