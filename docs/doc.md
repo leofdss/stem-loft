@@ -298,6 +298,49 @@ Renderização da mesma progressão na Linha do Tempo + Waveform, com a Visualiz
 
 Mockup interativo (com fader e destaque de traste ao passar o mouse): [Acordes & Tablatura](https://claude.ai/code/artifact/af5ed906-86c6-4d45-989e-49065383c682).
 
+### Estado visual em tempo real (Angular)
+
+O que a `Visualização de Acordes/Tablatura` precisa pra saber o que destacar na tela a cada instante — **não** o estado de transporte (play/pause/stop, isso é outro contrato) e **não** a partitura inteira (isso chega uma vez só, via `score_loaded`). Só a fatia que muda a cada `playback_progress`: qual acorde e qual batida estão ativos agora.
+
+```typescript
+/** Diagrama de digitação de um acorde (do `{define}` do .cho). */
+interface ChordDiagram {
+  readonly baseFret: number;
+  /** Da corda mais grave à mais aguda, 6 posições; "x" = corda muda. */
+  readonly frets: readonly (number | "x")[];
+}
+
+/** Acorde tocando agora, já resolvido com timing absoluto. */
+interface ActiveChord {
+  readonly name: string; // "G", "Am7", ...
+  readonly startSec: number;
+  readonly endSec: number;
+  readonly diagram: ChordDiagram | null;
+}
+
+/** Batida atual dentro da grade de compasso. */
+interface ActiveBeat {
+  readonly bar: number; // compasso, 1-based
+  readonly beatInBar: number; // 1-based, até time.beatsPerBar
+  readonly startSec: number;
+  readonly endSec: number;
+}
+
+/**
+ * Streaming de dados que atualiza a cada tick de reprodução.
+ * `chordProgress`/`beatProgress` não entram aqui de propósito — são
+ * deriváveis de `positionSec` + `startSec`/`endSec`, não precisam de
+ * outra fonte da mesma verdade (ver "Redundância não validada" na análise).
+ */
+interface ChordBeatStream {
+  readonly positionSec: number;
+  readonly activeChord: ActiveChord | null; // null = trecho sem acorde
+  readonly activeBeat: ActiveBeat;
+}
+```
+
+`ChordBeatStream` é recalculado no lado Angular a cada `playback_progress` recebido, cruzando `positionSec` com a partitura estática já carregada por `score_loaded` — o núcleo Rust não precisa saber nada sobre "qual acorde está ativo", só emitir a posição.
+
 ## Fluxos principais
 
 ### Importação de stems (manual)
