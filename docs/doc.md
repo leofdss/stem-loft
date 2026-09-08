@@ -110,7 +110,7 @@ Interface entre a WebView (Angular) e o núcleo Rust.
 
 | Componente | Responsabilidade |
 |---|---|
-| **Commands (Angular → Rust)** | Chamadas da UI para o núcleo: importar stems, alterar mixer, transporte (play/pause/stop), definir marcadores de loop, disparar separação automática. |
+| **Commands (Angular → Rust)** | Chamadas da UI para o núcleo: abrir/criar projeto, importar stems, alterar mixer, transporte (play/pause/stop), definir marcadores de loop, disparar separação automática. |
 | **Events (Rust → Angular)** | Canal **multi-produtor**: `Motor de Áudio` publica progresso de playback/transporte; `Gerenciador de Metadados de Partitura` publica acordes/tablatura/letra interpretados. Não é "o canal do motor de áudio" — é um barramento de notificações do núcleo, com mais de uma origem. Ver [tabela de eventos](#tabela-de-eventos) abaixo. |
 
 #### Tabela de eventos
@@ -119,7 +119,7 @@ Interface entre a WebView (Angular) e o núcleo Rust.
 |---|---|---|---|
 | `playback_progress` | Motor de Áudio | posição atual (segundos), amostra de waveform | Linha do Tempo, Visualização de Acordes/Tablatura |
 | `transport_state_changed` | Motor de Áudio | estado (`playing` / `paused` / `stopped`) | Controles de Transporte |
-| `score_loaded` | Gerenciador de Metadados de Partitura | acordes, tablatura e letra já interpretados do `.cho` | Visualização de Acordes/Tablatura |
+| `score_loaded` | Gerenciador de Metadados de Partitura | acordes, tablatura e letra interpretados, mais `tempo`/`time`/`tuning` do cabeçalho do `.cho` | Visualização de Acordes/Tablatura |
 | `score_parse_error` | Gerenciador de Metadados de Partitura | mensagem de erro e linha do `.cho` onde ocorreu | Visualização de Acordes/Tablatura (estado de erro) |
 
 Cada evento carrega sua própria origem — a UI nunca precisa adivinhar quem publicou o quê, só assinar o tipo de evento que interessa.
@@ -166,9 +166,13 @@ O formato escolhido é o **[ChordPro](https://www.chordpro.org/)** (extensão `.
 Duas extensões próprias, pensadas pra não colidir com a sintaxe padrão:
 
 - **`{tuning: E A D G B E}`** — afinação, corda grave→aguda (mesma ordem que `{define}` já usa para `frets`, então é a mesma convenção em todo o arquivo). A tela ainda desenha a corda aguda em cima — isso é só um detalhe de renderização, independe da ordem de armazenamento.
-- **`{t: mm:ss.cc}`** — âncora de tempo absoluto (estilo arquivo `.lrc` de letra sincronizada), no início de uma linha, dizendo em que segundo do áudio aquela linha (cifra+letra ou tablatura) começa. Fica em `{t: ...}` — uma diretiva própria — em vez de reaproveitar colchetes `[00:12.34]` como o `.lrc` faz, porque colchetes já são a sintaxe de acorde do ChordPro; um parser tentaria ler "00:12.34" como nome de acorde.
+- **`{t: m:ss.cc}`** — âncora de tempo absoluto (estilo arquivo `.lrc` de letra sincronizada), no início de uma linha, dizendo em que segundo do áudio aquela linha (cifra+letra ou tablatura) começa. Fica em `{t: ...}` — uma diretiva própria — em vez de reaproveitar colchetes `[00:12.34]` como o `.lrc` faz, porque colchetes já são a sintaxe de acorde do ChordPro; um parser tentaria ler "00:12.34" como nome de acorde.
+
+  Formato exato: `t := minuto ":" segundo "." centesimo`, onde `minuto` é 1+ dígitos sem zero à esquerda obrigatório, `segundo` é sempre 2 dígitos (00–59) e `centesimo` é sempre 2 dígitos (00–99). `0:00.00`, `1:05.30`, `12:40.00` são válidos; `00.5`, `1:5.3` não são (segundo/centésimo precisam dos 2 dígitos).
 
 Diretivas desconhecidas (`{tuning}`, `{t}`) são o mecanismo de extensão esperado do formato: qualquer leitor de ChordPro que não as reconheça as ignora e ainda renderiza o resto do arquivo corretamente — o arquivo continua útil fora do Stem Player.
+
+**Regra do dialeto: no máximo um acorde por linha.** ChordPro puro permite vários acordes numa linha (`[G]Twinkle twinkle [C]little star`) — mas `{t:}` só ancora o *início* da linha, então um segundo acorde na mesma linha não teria como ter seu próprio horário. Pra manter `{t:}` como fonte confiável de sincronização, o Stem Player exige um acorde por linha; frases com troca de acorde no meio viram duas linhas, cada uma com sua própria âncora `{t:}` (repetindo a letra se for o caso, ou deixando a segunda linha só com o acorde). `Gerenciador de Metadados de Partitura` rejeita (com `score_parse_error`) uma linha com mais de um `[acorde]`.
 
 A notação de técnicas de guitarra dentro de `{start_of_tab}` continua a mesma já documentada:
 
@@ -201,6 +205,16 @@ Regras de validação (o parser deve rejeitar ou avisar):
 - Duas notas do mesmo `item` (separadas por `-`) não podem apontar para a **mesma corda** — fisicamente uma corda só soa uma altura por vez.
 - `traste` fora de 0–24 é inválido (limite físico do braço).
 - `corda` fora de 1–6 é inválido pra afinação de 6 cordas.
+
+#### Resolução de `startSec`/`endSec` e origem da grade de compasso
+
+`ActiveChord.startSec` é o valor do `{t:}` da linha onde o `[acorde]` aparece; `endSec` é o `{t:}` do **próximo evento que muda o que está soando** — ou seja, a próxima linha que também tem um `[acorde]`, ou o início do próximo `{start_of_tab}`. Uma linha de letra sem colchete (continuação da mesma frase, mesmo acorde) **não** encerra o acorde atual — só avança o texto exibido; senão, duas linhas de letra seguidas sob o mesmo acorde cortariam o destaque no meio à toa.
+
+Duas bordas precisam de regra explícita:
+
+- **Último acorde do arquivo:** não existe "próximo evento" — o `endSec` é a duração do stem mais longo do projeto. Pra fechar antes disso, adicione uma linha final só com `{t: ...}` e um `[acorde]` marcando onde o último acorde termina (ex.: repetindo o mesmo nome, só pra fechar a janela).
+- **Origem da grade (compasso 1, batida 1):** é o **primeiro `{t:}` do arquivo**, não necessariamente o segundo 0 do áudio — uma introdução/contagem antes da primeira linha ancorada fica fora da numeração de compassos, e tudo bem: `Linha do Tempo` continua mostrando esse trecho normalmente, só não tem "compasso N" associado até a primeira âncora.
+- **Tempo dentro de um `{start_of_tab}`:** o bloco tem uma única âncora `{t:}` no início; a posição de cada nota dentro dele é proporcional à posição do caractere na linha — `notaSec = startSec + (coluna / totalDeColunas) × (endSec − startSec)`, usando o mesmo `endSec` (próximo evento que muda o que está soando) e o comprimento da linha de tab (todas as 6 cordas têm o mesmo número de colunas). Não precisa de uma âncora por nota.
 
 ### Exemplo completo — acordes + letra
 
@@ -256,7 +270,7 @@ E|----------------------------------------------------------------|
 1. **Sem componente de autoria** → resolvido: é um arquivo de texto puro. O usuário escreve/edita em qualquer editor hoje; amanhã, a API de análise de áudio (beat tracking + reconhecimento de acorde + transcrição de letra) pode gerar exatamente esse mesmo texto, linha por linha, sem precisar de UI nenhuma no app pra existir uma primeira versão. O app só precisa saber *ler* o arquivo, não *criar* — a autoria (humana ou automática) acontece fora da fronteira da arquitetura.
 2. **Grade rígida por batida** → resolvido: não existe mais array indexado por batida. Acordes ficam soltos ao lado da sílaba onde entram; tablatura é texto livre dentro de `{start_of_tab}`, com o espaçamento que fizer sentido — sem precisar caber em N slots fixos.
 3. **Redundância não validada** (`sizeInBeats` / `beats` / `tabs.length`) → resolvido: nenhum desses campos existe mais. A duração vem do áudio real (tamanho do stem) ou do último `{t: ...}` do arquivo. `{tempo}`/`{time}` continuam existindo só como metadado de exibição (desenhar a grade de compasso), nunca como fonte de verdade de posição — deixam de ser "múltiplas fontes da mesma verdade".
-4. **Dois domínios de tempo sem conversão** → resolvido: `{t: mm:ss.cc}` usa segundos — o mesmo domínio que `Gerenciador de Loops e Marcadores` já usa pros marcadores de início/fim. Acordes, letra, tablatura e loop agora compartilham nativamente a mesma unidade; BPM vira só uma projeção derivada pra desenhar o grid, não a base de cálculo.
+4. **Dois domínios de tempo sem conversão** → resolvido: `{t: m:ss.cc}` usa segundos — o mesmo domínio que `Gerenciador de Loops e Marcadores` já usa pros marcadores de início/fim. Acordes, letra, tablatura e loop agora compartilham nativamente a mesma unidade; BPM vira só uma projeção derivada pra desenhar o grid, não a base de cálculo.
 
 ### Impacto na arquitetura
 
@@ -278,7 +292,12 @@ O `.json` do projeto é schema nosso, sem essa tolerância nativa — precisa de
   "schemaVersion": 1,
   "id": "b3a1e6c2-8f21-4d9a-9c3e-1a2b3c4d5e6f",
   "name": "Estudo em Sol Maior",
-  "stems": ["violao.wav", "vocal.wav", "baixo.wav", "bateria.wav"],
+  "stems": [
+    { "id": "violao", "file": "violao.wav" },
+    { "id": "vocal", "file": "vocal.wav" },
+    { "id": "baixo", "file": "baixo.wav" },
+    { "id": "bateria", "file": "bateria.wav" }
+  ],
   "score": "estudo-sol-maior.cho",
   "loop": { "startSec": 0.0, "endSec": 12.0 },
   "mixer": {
@@ -287,6 +306,8 @@ O `.json` do projeto é schema nosso, sem essa tolerância nativa — precisa de
   }
 }
 ```
+
+`score` é opcional — um projeto sem partitura só reproduz e faz loop dos stems normalmente, sem `Visualização de Acordes/Tablatura`. `stems` são objetos com `id` estável, não só o nome do arquivo: `mixer` é indexado por `stems[].id`, então renomear `violao.wav` não orfaniza a configuração de volume/mute/solo — só o campo `file` muda.
 
 `Persistência de Projetos` lê `schemaVersion` antes de qualquer outra coisa: mesma versão → carrega direto; versão menor → aplica migrações registradas em sequência (cada uma sabe transformar `N` → `N+1`) antes de expor o projeto ao resto do núcleo; versão maior que a suportada → erro explícito ("projeto salvo por uma versão mais nova do app"), nunca uma tentativa silenciosa de leitura parcial.
 
@@ -301,6 +322,8 @@ Mockup interativo (com fader e destaque de traste ao passar o mouse): [Acordes &
 ### Estado visual em tempo real (Angular)
 
 O que a `Visualização de Acordes/Tablatura` precisa pra saber o que destacar na tela a cada instante — **não** o estado de transporte (play/pause/stop, isso é outro contrato) e **não** a partitura inteira (isso chega uma vez só, via `score_loaded`). Só a fatia que muda a cada `playback_progress`: qual acorde e qual batida estão ativos agora.
+
+`score` é opcional no projeto — a funcionalidade principal (loop por marcadores) não depende de partitura. Sem `.cho` associado, não existe tempo/fórmula de compasso pra calcular batida nenhuma, então `activeChord` **e** `activeBeat` são nuláveis; a tela de Acordes/Tablatura simplesmente não é montada nesse caso, e esse stream não chega a ser emitido.
 
 ```typescript
 /** Diagrama de digitação de um acorde (do `{define}` do .cho). */
@@ -321,7 +344,7 @@ interface ActiveChord {
 /** Batida atual dentro da grade de compasso. */
 interface ActiveBeat {
   readonly bar: number; // compasso, 1-based
-  readonly beatInBar: number; // 1-based, até time.beatsPerBar
+  readonly beatInBar: number; // 1-based, até o numerador de {time} (ex.: até 4 em 4/4)
   readonly startSec: number;
   readonly endSec: number;
 }
@@ -334,12 +357,12 @@ interface ActiveBeat {
  */
 interface ChordBeatStream {
   readonly positionSec: number;
-  readonly activeChord: ActiveChord | null; // null = trecho sem acorde
-  readonly activeBeat: ActiveBeat;
+  readonly activeChord: ActiveChord | null; // null = trecho sem acorde (ou sem score)
+  readonly activeBeat: ActiveBeat | null; // null = sem score carregado
 }
 ```
 
-`ChordBeatStream` é recalculado no lado Angular a cada `playback_progress` recebido, cruzando `positionSec` com a partitura estática já carregada por `score_loaded` — o núcleo Rust não precisa saber nada sobre "qual acorde está ativo", só emitir a posição.
+`ChordBeatStream` é recalculado no lado Angular a cada `playback_progress` recebido, cruzando `positionSec` com a partitura estática já carregada por `score_loaded` — o núcleo Rust não precisa saber nada sobre "qual acorde está ativo", só emitir a posição. Se o projeto não tem `score`, o componente nunca assina `playback_progress` pra esse fim e `ChordBeatStream` não existe.
 
 ## Fluxos principais
 
@@ -424,24 +447,31 @@ sequenceDiagram
     actor Usuário
     participant SESSION as Gerenciador de Sessão
     participant METADATA as Gerenciador de Metadados\nde Partitura
+    participant AUDIO as Motor de Áudio
     participant EVT as Events
     participant CHORDVIEW as Visualização de\nAcordes/Tablatura
     participant TIMELINE as Linha do Tempo
 
-    Usuário->>SESSION: Abre projeto
-    SESSION->>METADATA: carregar_metadados(projeto)
-    METADATA-->>SESSION: acordes, tablatura, metrônomo, afinação
-    SESSION->>EVT: publica metadados de partitura
-    EVT-->>CHORDVIEW: renderiza acordes + tablatura
+    Usuário->>SESSION: Abre projeto (com score)
+    SESSION->>METADATA: carregar_score(caminho .cho)
+    alt .cho válido
+        METADATA->>EVT: emite "score_loaded"
+        EVT-->>CHORDVIEW: acordes + tablatura + letra interpretados
+    else erro de parsing
+        METADATA->>EVT: emite "score_parse_error"
+        EVT-->>CHORDVIEW: exibe estado de erro (linha do .cho, mensagem)
+        Note over CHORDVIEW: resto do app (stems, loop,\nwaveform) continua normalmente
+    end
 
-    Note over TIMELINE,CHORDVIEW: Durante o playback, ambos\nescutam os mesmos eventos de progresso.
-    EVT-->>TIMELINE: progresso de playback
-    EVT-->>CHORDVIEW: progresso de playback
-    CHORDVIEW->>CHORDVIEW: destaca acorde/batida atual
+    Note over TIMELINE,CHORDVIEW: Durante o playback, ambos\nescutam "playback_progress".
+    AUDIO->>EVT: emite "playback_progress" (positionSec)
+    EVT-->>TIMELINE: atualiza posição/waveform
+    EVT-->>CHORDVIEW: positionSec
+    CHORDVIEW->>CHORDVIEW: recalcula ChordBeatStream\n(activeChord/activeBeat) e destaca
 ```
 
 ## Estado atual e trabalho futuro
 
 - **Em desenvolvimento agora:** Gerenciador de Sessão / Estado, e por extensão os fluxos que ele orquestra diretamente (importação manual, persistência, motor de áudio, loops/marcadores, mixer, transporte, timeline).
-- **Metadados de partitura:** Gerenciador de Metadados de Partitura e Visualização de Acordes/Tablatura mapeiam acordes, tablatura, metrônomo e afinação persistidos junto do projeto, exibidos sincronizados com a timeline — não marcados como "futuro" no canvas, entram junto do desenvolvimento atual.
+- **Metadados de partitura:** Gerenciador de Metadados de Partitura e Visualização de Acordes/Tablatura mapeiam acordes, tablatura, letra, metrônomo e afinação persistidos junto do projeto (arquivo `.cho`, opcional por projeto), exibidos sincronizados com a timeline — não marcados como "futuro" no canvas, entram junto do desenvolvimento atual.
 - **Planejado para o futuro:** separação automática de stems, tanto na ponta da UI ("Separação Automática") quanto no núcleo ("Cliente de Separação") e no serviço externo ("API de Separação de Stems"), integrando-se ao fluxo de importação já existente.
