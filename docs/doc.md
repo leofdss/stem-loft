@@ -1,5 +1,49 @@
 # Stem Player
 
+## Metadata
+
+```typescript
+interface Project {
+	id: string; // uuid
+	name: string;
+	sizeInBeats: number; // 240
+	metronome: {
+		time: number; // 80 BPM
+		beats: number; // 4
+	},
+	chords: {
+		name: string; // G
+		beats: number; // 4
+		tabs: string[]; // ["3.6", "5.5", "5.4", "3.5"]  ["0.1-1.2-0.3-2.4-3.5"]
+	}[],
+	tuning: string[], // ["E", "B", "G", "D", "A", "E"]
+}
+```
+
+No array de Tabs cada item representa uma batida. Cada item no array é representado por "TRASTE.CORDA". O traço "-" é usado caso mais de uma corda é tocada ao mesmo tempo.
+
+Visualmente deve ficar assim:
+
+```
+   G                              F    C
+E|---------3---------------3------1----0----| 
+B|-----------3---------------3----1----1----| 
+G|-------4-----4---------4-----4--2----0----| 
+D|-----5---------5-----5----------3----2----| 
+A|---5---------------5------------3----3----| 
+E|-3---------------3--------------1---------|
+```
+
+```
+E|----------------------------------------------------| 
+B|-8~~b10r8--8~~b12r8--8~b12r-b10~~b12r8--------------| 
+G|----------------------------------------------------| 
+D|----------------------------------------------------| 
+A|----------------------------------------------------| 
+E|----------------------------------------------------|
+```
+
+
 Aplicativo desktop para reprodução de _stems_ musicais com foco em **criar loops de repetição de trechos por meio de marcadores temporais**.
 
 ## Sobre
@@ -12,195 +56,150 @@ O usuário também controla o mixer de cada stem (volume, mute e solo), podendo,
 
 **Loops de repetição por marcadores temporais.** Defina um marcador inicial e um final em um trecho da música e repita-o quantas vezes precisar, no andamento da gravação, com os demais instrumentos soando normalmente.
 
-## Stack e plataforma
-
-O aplicativo é construído sobre **Tauri**: um núcleo lógico em **Rust** (áudio, estado, persistência) embarcado com uma camada de apresentação em **Angular**, rodando dentro da WebView do Tauri. A comunicação entre as duas camadas acontece pela **ponte de IPC do Tauri** (`Commands` e `Events`).
-
 ## Visão geral da arquitetura
 
 ```mermaid
 flowchart LR
-    subgraph EXT["Serviços Externos"]
-        API["API de Separação\nde Stems (futuro)"]
+    subgraph NUCLEO_LOGICO["Nucleo Logico - Rust"]
+        GERENCIADOR_SESSAO["Gerenciador de Sessao / Estado (projeto atual)"]
+        IMPORTADOR_STEMS["Importador de Stems"]
+        MOTOR_AUDIO["Motor de Audio (decodificacao, mixagem, playback)"]
+        CLIENTE_SEPARACAO["Cliente de Separacao (adapter da API - futuro)"]
+        GERENCIADOR_LOOPS["Gerenciador de Loops e Marcadores"]
+        PERSISTENCIA_PROJETOS["Persistencia de Projetos"]
+        GERENCIADOR_METADADOS["Gerenciador de Metadados de Partitura (acordes, tablatura,…"]
+    end
+    subgraph CAMADA_APRESENTACAO["Camada de Apresentacao - Angular (WebView do Tauri)"]
+        MIXER_STEMS["Mixer de Stems (volume / mute / solo)"]
+        TELA_IMPORTACAO["Tela de Importacao de Stems"]
+        SEPARACAO_AUTOMATICA["Separacao Automatica (futuro)"]
+        CONTROLES_TRANSPORTE["Controles de Transporte (play / pause / stop)"]
+        LINHA_TEMPO["Linha do Tempo + Waveform (marcadores e selecao de loop)"]
+        VISUALIZACAO_ACORDES["Visualizacao de Acordes/Tablatura (sincronizada com timelin…"]
+    end
+    subgraph PONTE_COMUNICACAO["Ponte de Comunicacao - Tauri IPC"]
+        COMMANDS_ANGULAR["Commands (Angular -&gt; Rust)"]
+        EVENTS_RUST["Events (Rust -&gt; Angular)"]
+    end
+    subgraph INFRAESTRUTURA_LOCAL["Infraestrutura Local"]
+        SISTEMA_ARQUIVOS["Sistema de Arquivos (stems + projeto .json)"]
+        SAIDA_AUDIO["Saida de Audio do SO (via cpal)"]
+    end
+    subgraph SERVICOS_EXTERNOS["Servicos Externos"]
+        API_SEPARACAO["API de Separacao de Stems (futuro)"]
     end
 
-    subgraph CORE["Núcleo Lógico — Rust"]
-        SESSION["Gerenciador de Sessão / Estado\n(projeto atual)"]
-        SEPCLIENT["Cliente de Separação\n(adapter da API — futuro)"]
-        IMPORT["Importador de Stems"]
-        LOOPMGR["Gerenciador de Loops\ne Marcadores"]
-        AUDIO["Motor de Áudio\n(decodificação, mixagem, playback)"]
-        PERSIST["Persistência de Projetos"]
-    end
-
-    subgraph IPC["Ponte de Comunicação — Tauri IPC"]
-        CMD["Commands\n(Angular → Rust)"]
-        EVT["Events\n(Rust → Angular)"]
-    end
-
-    subgraph UI["Camada de Apresentação — Angular (WebView do Tauri)"]
-        MIXER["Mixer de Stems\n(volume / mute / solo)"]
-        IMPORTSCREEN["Tela de Importação\nde Stems"]
-        AUTOSEP["Separação Automática\n(futuro)"]
-        TRANSPORT["Controles de Transporte\n(play / pause / stop)"]
-        TIMELINE["Linha do Tempo + Waveform\n(marcadores e seleção de loop)"]
-    end
-
-    subgraph INFRA["Infraestrutura Local"]
-        FS["Sistema de Arquivos\n(stems + projeto .json)"]
-        OSAUDIO["Saída de Áudio do SO\n(via cpal)"]
-    end
-
-    SESSION --> SEPCLIENT
-    SEPCLIENT -- HTTP --> API
-    API -- "stems gerados" --> IMPORT
-
-    SESSION --> PERSIST
-    SESSION --> IMPORT
-    SESSION --> AUDIO
-    SESSION --> LOOPMGR
-    LOOPMGR --> AUDIO
-
-    IMPORT --> FS
-    PERSIST --> FS
-    AUDIO --> OSAUDIO
-
-    CMD --> SESSION
-    AUDIO --> EVT
-    EVT --> TRANSPORT
-    EVT --> TIMELINE
-    TIMELINE --> CMD
-
-    MIXER --> CMD
-    IMPORTSCREEN --> CMD
-    TRANSPORT --> CMD
-    AUTOSEP --> CMD
+    GERENCIADOR_SESSAO --> CLIENTE_SEPARACAO
+    CLIENTE_SEPARACAO -- "HTTP" --> API_SEPARACAO
+    API_SEPARACAO -- "stems gerados" --> IMPORTADOR_STEMS
+    GERENCIADOR_SESSAO --> PERSISTENCIA_PROJETOS
+    GERENCIADOR_SESSAO --> IMPORTADOR_STEMS
+    GERENCIADOR_SESSAO --> MOTOR_AUDIO
+    GERENCIADOR_SESSAO --> GERENCIADOR_LOOPS
+    GERENCIADOR_LOOPS --> MOTOR_AUDIO
+    IMPORTADOR_STEMS --> SISTEMA_ARQUIVOS
+    PERSISTENCIA_PROJETOS --> SISTEMA_ARQUIVOS
+    MOTOR_AUDIO --> SAIDA_AUDIO
+    COMMANDS_ANGULAR --> GERENCIADOR_SESSAO
+    MOTOR_AUDIO --> EVENTS_RUST
+    EVENTS_RUST --> CONTROLES_TRANSPORTE
+    MIXER_STEMS --> COMMANDS_ANGULAR
+    TELA_IMPORTACAO --> COMMANDS_ANGULAR
+    CONTROLES_TRANSPORTE --> COMMANDS_ANGULAR
+    EVENTS_RUST --> LINHA_TEMPO
+    LINHA_TEMPO --> COMMANDS_ANGULAR
+    SEPARACAO_AUTOMATICA --> COMMANDS_ANGULAR
+    GERENCIADOR_SESSAO --> GERENCIADOR_METADADOS
+    GERENCIADOR_METADADOS -- "persistido com o projeto" --> PERSISTENCIA_PROJETOS
+    GERENCIADOR_METADADOS --> EVENTS_RUST
+    EVENTS_RUST --> VISUALIZACAO_ACORDES
 ```
-
-## Camadas
-
-### Núcleo Lógico — Rust
-
-Contém toda a lógica de domínio do aplicativo, sem dependência da interface gráfica.
-
-| Componente | Responsabilidade |
-|---|---|
-| **Gerenciador de Sessão / Estado** | Componente central do núcleo (foco atual de desenvolvimento). Orquestra importação, persistência, motor de áudio e loops/marcadores; é o ponto de entrada dos `Commands` vindos do Angular. |
-| **Importador de Stems** | Recebe arquivos de stem (locais ou vindos da separação automática) e os grava no sistema de arquivos do projeto. |
-| **Cliente de Separação** (futuro) | Adapter que fala HTTP com a API externa de separação de stems, encapsulando a integração do restante do núcleo com esse serviço. |
-| **Gerenciador de Loops e Marcadores** | Mantém marcador inicial/final do trecho em loop e alimenta o motor de áudio com essa informação para repetição contínua. |
-| **Motor de Áudio** | Decodifica, mixa e reproduz os stems; aplica o loop marcado e os estados de volume/mute/solo; emite eventos de progresso/transporte. |
-| **Persistência de Projetos** | Serializa/lê o estado do projeto (stems, marcadores, mixagem) como arquivo `.json`. |
-
-### Ponte de Comunicação — Tauri IPC
-
-Interface entre a WebView (Angular) e o núcleo Rust.
-
-| Componente | Responsabilidade |
-|---|---|
-| **Commands (Angular → Rust)** | Chamadas da UI para o núcleo: importar stems, alterar mixer, transporte (play/pause/stop), definir marcadores de loop, disparar separação automática. |
-| **Events (Rust → Angular)** | Notificações assíncronas do núcleo para a UI: progresso de playback/waveform para a linha do tempo, mudanças de estado de transporte. |
-
-### Camada de Apresentação — Angular (WebView do Tauri)
-
-| Componente | Responsabilidade |
-|---|---|
-| **Mixer de Stems** | Controles de volume, mute e solo por stem. |
-| **Tela de Importação de Stems** | Fluxo de seleção/upload de stems para um projeto. |
-| **Separação Automática** (futuro) | UI para disparar a separação automática de uma faixa em stems via API externa. |
-| **Controles de Transporte** | Play, pause e stop, refletindo o estado emitido pelo motor de áudio. |
-| **Linha do Tempo + Waveform** | Visualização da forma de onda, seleção do trecho em loop e posicionamento dos marcadores. |
-
-### Infraestrutura Local
-
-| Componente | Responsabilidade |
-|---|---|
-| **Sistema de Arquivos** | Armazena os arquivos de stem e o `.json` do projeto (persistência e importação escrevem aqui). |
-| **Saída de Áudio do SO** | Saída real de áudio, acessada pelo motor de áudio via [`cpal`](https://github.com/RustAudio/cpal). |
-
-### Serviços Externos
-
-| Componente | Responsabilidade |
-|---|---|
-| **API de Separação de Stems** (futuro) | Serviço externo, acessado via HTTP pelo Cliente de Separação, que recebe uma faixa completa e devolve os stems separados. |
 
 ## Fluxos principais
 
-### Importação de stems (manual)
+### Carregamento e sincronização de metadados de partitura
 
 ```mermaid
 sequenceDiagram
-    actor Usuário
-    participant UI as Tela de Importação
-    participant CMD as Commands
-    participant SESSION as Gerenciador de Sessão
-    participant IMPORT as Importador de Stems
-    participant FS as Sistema de Arquivos
+    participant Angular as Camada de Apresentação<br/>(Angular)
+    participant Sessao as Gerenciador de Sessão<br/>(Rust)
+    participant MetadadosGer as Gerenciador de Metadados<br/>de Partitura (Rust)
+    participant Events as Events<br/>(Tauri IPC)
+    participant Acordes as Visualização de Acordes/<br/>Tablatura (Angular)
+    participant Timeline as Linha do Tempo<br/>(Angular)
 
-    Usuário->>UI: Seleciona arquivos de stem
-    UI->>CMD: comando "importar_stems"
-    CMD->>SESSION: importar_stems(arquivos)
-    SESSION->>IMPORT: processar(arquivos)
-    IMPORT->>FS: grava stems + projeto.json
-    FS-->>IMPORT: ok
-    IMPORT-->>SESSION: stems importados
+    Angular->>Sessao: Carrega projeto
+    Sessao->>MetadadosGer: Inicializa com dados de partitura<br/>(acordes, tablatura, metronomo, afinacao)
+    MetadadosGer->>MetadadosGer: Processa e valida metadados
+    MetadadosGer->>Events: Emite dados de partitura prontos
+    Events->>Acordes: Recebe dados (acordes, tablatura)
+    Events->>Timeline: Emite progresso de playback
+    Timeline->>Acordes: Dispara sincronização com posição<br/>da timeline
+    Acordes->>Acordes: Atualiza visualização sincronizada
 ```
 
-### Separação automática (futuro)
+## Nucleo Logico - Rust
 
-```mermaid
-sequenceDiagram
-    actor Usuário
-    participant UI as Separação Automática
-    participant CMD as Commands
-    participant SESSION as Gerenciador de Sessão
-    participant SEP as Cliente de Separação
-    participant API as API de Separação (externa)
-    participant IMPORT as Importador de Stems
+| Componente | Descrição |
+|---|---|
+| Gerenciador de Sessao / Estado (projeto atual) | Gerenciador de Sessao / Estado (projeto atual) |
+| Importador de Stems | Importador de Stems |
+| Motor de Audio (decodificacao, mixagem, playback) | Motor de Audio (decodificacao, mixagem, playback) |
+| Cliente de Separacao (adapter da API - futuro) | Cliente de Separacao (adapter da API - futuro) |
+| Gerenciador de Loops e Marcadores | Gerenciador de Loops e Marcadores |
+| Persistencia de Projetos | Persistencia de Projetos |
+| Gerenciador de Metadados de Partitura (acordes, tablatura, metronomo, afinacao) | Gerenciador de Metadados de Partitura (acordes, tablatura, metronomo, afinacao) |
 
-    Usuário->>UI: Envia faixa completa
-    UI->>CMD: comando "separar_stems"
-    CMD->>SESSION: separar_stems(faixa)
-    SESSION->>SEP: solicitar separação
-    SEP->>API: HTTP request (faixa)
-    API-->>SEP: stems gerados
-    SEP-->>IMPORT: encaminha stems
-    IMPORT-->>SESSION: stems importados
-```
+## Camada de Apresentacao - Angular (WebView do Tauri)
 
-### Reprodução com loop de marcadores
+| Componente | Descrição |
+|---|---|
+| Mixer de Stems (volume / mute / solo) | Mixer de Stems (volume / mute / solo) |
+| Tela de Importacao de Stems | Tela de Importacao de Stems |
+| Separacao Automatica (futuro) | Separacao Automatica (futuro) |
+| Controles de Transporte (play / pause / stop) | Controles de Transporte (play / pause / stop) |
+| Linha do Tempo + Waveform (marcadores e selecao de loop) | Linha do Tempo + Waveform (marcadores e selecao de loop) |
+| Visualizacao de Acordes/Tablatura (sincronizada com timeline) | Visualizacao de Acordes/Tablatura (sincronizada com timeline) |
 
-```mermaid
-sequenceDiagram
-    actor Usuário
-    participant TIMELINE as Linha do Tempo
-    participant TRANSPORT as Controles de Transporte
-    participant CMD as Commands
-    participant SESSION as Gerenciador de Sessão
-    participant LOOP as Gerenciador de Loops
-    participant AUDIO as Motor de Áudio
-    participant OS as Saída de Áudio do SO
-    participant EVT as Events
+## Ponte de Comunicacao - Tauri IPC
 
-    Usuário->>TIMELINE: Define marcador inicial/final
-    TIMELINE->>CMD: comando "definir_marcadores"
-    CMD->>SESSION: definir_marcadores(inicio, fim)
-    SESSION->>LOOP: atualizar(inicio, fim)
+| Componente | Descrição |
+|---|---|
+| Commands (Angular -> Rust) | Commands (Angular -> Rust) |
+| Events (Rust -> Angular) | Events (Rust -> Angular) |
 
-    Usuário->>TRANSPORT: Play
-    TRANSPORT->>CMD: comando "play"
-    CMD->>SESSION: play()
-    SESSION->>AUDIO: iniciar playback com loop ativo
-    LOOP-->>AUDIO: limites do loop
-    AUDIO->>OS: stream de áudio mixado
-    AUDIO->>EVT: progresso de playback
-    EVT-->>TIMELINE: atualiza posição/waveform
-    EVT-->>TRANSPORT: atualiza estado (playing)
+## Infraestrutura Local
 
-    Note over AUDIO: Ao atingir o marcador final,\no motor volta ao marcador inicial\ne continua o playback.
-```
+| Componente | Descrição |
+|---|---|
+| Sistema de Arquivos (stems + projeto .json) | Sistema de Arquivos (stems + projeto .json) |
+| Saida de Audio do SO (via cpal) | Saida de Audio do SO (via cpal) |
+
+## Servicos Externos
+
+| Componente | Descrição |
+|---|---|
+| API de Separacao de Stems (futuro) | API de Separacao de Stems (futuro) |
 
 ## Estado atual e trabalho futuro
 
-- **Em desenvolvimento agora:** Gerenciador de Sessão / Estado, e por extensão os fluxos que ele orquestra diretamente (importação manual, persistência, motor de áudio, loops/marcadores, mixer, transporte, timeline).
-- **Planejado para o futuro:** separação automática de stems, tanto na ponta da UI ("Separação Automática") quanto no núcleo ("Cliente de Separação") e no serviço externo ("API de Separação de Stems"), integrando-se ao fluxo de importação já existente.
+### Funcionalidade atual / planejada imediata
+
+Os componentes abaixo já estão incorporados ou planejados como parte da arquitetura atual e não possuem marcação de futuro:
+
+- **Gerenciador de Metadados de Partitura** (Rust): responsável por processar, validar e manter em sincronização os dados de partitura (acordes, tablatura, metronomo, afinação), persistindo-os junto com o projeto.
+- **Visualização de Acordes/Tablatura** (Angular): renderiza dinamicamente os acordes e tablatura, mantendo sincronização com a linha do tempo durante a reprodução.
+- **Gerenciador de Sessão / Estado**: orquestra o carregamento de projetos e inicialização de todos os componentes.
+- **Importador de Stems**: processa stems de áudio de forma determinística.
+- **Motor de Audio**: decodifica, mescla e reproduz stems com sincronização de timeline.
+- **Mixer de Stems**: interface para controle de volume, mute e solo por stem.
+- **Linha do Tempo + Waveform**: marca trechos de loop e sincroniza com metadados de partitura.
+- **Ponte de Comunicação (Tauri IPC)**: facilita comunicação entre Angular (frontend) e Rust (backend).
+
+### Funcionalidade futura
+
+Os componentes abaixo estão marcados como "(futuro)" e representam expansões de escopo planejadas:
+
+- **Cliente de Separação (adapter da API)**: adapter para integração com serviços externos de separação de stems (e.g., API de IA para isolar instrumentos).
+- **Separação Automática (Angular)**: interface do usuário para disparo de separação automática via API externa.
+- **API de Separação de Stems**: serviço externo de processamento de áudio (não implementado localmente).
