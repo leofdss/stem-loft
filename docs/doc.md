@@ -92,13 +92,17 @@ Contém toda a lógica de domínio do aplicativo, sem dependência da interface 
 
 | Componente | Responsabilidade |
 |---|---|
-| **Gerenciador de Sessão / Estado** | Componente central do núcleo (foco atual de desenvolvimento). Orquestra importação, persistência, motor de áudio, loops/marcadores e metadados de partitura; é o ponto de entrada dos `Commands` vindos do Angular. |
+| **Gerenciador de Sessão / Estado** | Guarda **apenas** a referência ao projeto atualmente aberto (qual projeto, quais caminhos de stems/`.cho`) — não contém lógica de domínio própria. É o ponto de entrada dos `Commands`, mas cada Command é despachado para o módulo dono do domínio (Importador, Motor de Áudio, Loops, Metadados, Persistência), que executa a operação; a Sessão só lê/atualiza o estado compartilhado que esses módulos consultam. Ver [nota de design](#nota-de-design-sessão-como-roteador-fino). |
 | **Importador de Stems** | Recebe arquivos de stem (locais ou vindos da separação automática) e os grava no sistema de arquivos do projeto. |
 | **Cliente de Separação** (futuro) | Adapter que fala HTTP com a API externa de separação de stems, encapsulando a integração do restante do núcleo com esse serviço. |
 | **Gerenciador de Loops e Marcadores** | Mantém marcador inicial/final do trecho em loop e alimenta o motor de áudio com essa informação para repetição contínua. |
 | **Motor de Áudio** | Decodifica, mixa e reproduz os stems; aplica o loop marcado e os estados de volume/mute/solo; emite eventos de progresso/transporte. |
 | **Persistência de Projetos** | Serializa/lê o estado do projeto (stems, marcadores, mixagem) como arquivo `.json`, incluindo a referência ao arquivo `.cho` de metadados de partitura. |
 | **Gerenciador de Metadados de Partitura** | Faz o parsing do arquivo `.cho` (ChordPro) referenciado pelo projeto — acordes, tablatura, letra, metrônomo e afinação — e expõe o resultado à UI via `Events` para exibição sincronizada com a timeline. |
+
+#### Nota de design: Sessão como roteador fino
+
+`Gerenciador de Sessão / Estado` existe pra resolver um problema específico — "qual projeto está aberto agora" — não pra acumular lógica de cada feature nova. A regra prática: um `Command` novo ganha seu handler no módulo dono do domínio (ex.: `definir_marcadores` mexe só no `Gerenciador de Loops`); a Sessão só entra se o handler precisar saber qual projeto está ativo. Se um handler começar a coordenar mais de um módulo com lógica própria (não só repassar dados), é sinal de que essa lógica pertence a um módulo novo — não à Sessão. Isso evita que ela vire um *god object* conforme o número de `Commands` cresce.
 
 ### Ponte de Comunicação — Tauri IPC
 
@@ -107,7 +111,18 @@ Interface entre a WebView (Angular) e o núcleo Rust.
 | Componente | Responsabilidade |
 |---|---|
 | **Commands (Angular → Rust)** | Chamadas da UI para o núcleo: importar stems, alterar mixer, transporte (play/pause/stop), definir marcadores de loop, disparar separação automática. |
-| **Events (Rust → Angular)** | Notificações assíncronas do núcleo para a UI: progresso de playback/waveform para a linha do tempo, mudanças de estado de transporte, dados de acordes/tablatura para a visualização sincronizada. |
+| **Events (Rust → Angular)** | Canal **multi-produtor**: `Motor de Áudio` publica progresso de playback/transporte; `Gerenciador de Metadados de Partitura` publica acordes/tablatura/letra interpretados. Não é "o canal do motor de áudio" — é um barramento de notificações do núcleo, com mais de uma origem. Ver [tabela de eventos](#tabela-de-eventos) abaixo. |
+
+#### Tabela de eventos
+
+| Evento | Produtor | Payload essencial | Consumidor(es) |
+|---|---|---|---|
+| `playback_progress` | Motor de Áudio | posição atual (segundos), amostra de waveform | Linha do Tempo, Visualização de Acordes/Tablatura |
+| `transport_state_changed` | Motor de Áudio | estado (`playing` / `paused` / `stopped`) | Controles de Transporte |
+| `score_loaded` | Gerenciador de Metadados de Partitura | acordes, tablatura e letra já interpretados do `.cho` | Visualização de Acordes/Tablatura |
+| `score_parse_error` | Gerenciador de Metadados de Partitura | mensagem de erro e linha do `.cho` onde ocorreu | Visualização de Acordes/Tablatura (estado de erro) |
+
+Cada evento carrega sua própria origem — a UI nunca precisa adivinhar quem publicou o quê, só assinar o tipo de evento que interessa.
 
 ### Camada de Apresentação — Angular (WebView do Tauri)
 
@@ -166,6 +181,26 @@ A notação de técnicas de guitarra dentro de `{start_of_tab}` continua a mesma
 | `/` | Slide ascendente | `5/7` | Desliza do traste 5 até o 7 |
 | `\` | Slide descendente | `7\5` | Desliza do traste 7 até o 5 |
 | `~` | Vibrato | `8~` | Vibra a nota no traste 8 |
+
+#### Gramática
+
+```
+item        := nota ("-" nota)* | "-"        ; "-" sozinho = descanso
+nota        := traste (op traste | "~")* "." corda
+op          := "h" | "p" | "b" | "r" | "/" | "\"
+traste      := digito digito?                ; 0-24, sem zero à esquerda
+corda       := "1" | "2" | "3" | "4" | "5" | "6"
+digito      := "0".."9"
+```
+
+`~` é o único operador sem traste-alvo — não é seguido de dígito (por isso `8~~b10r8` é válido: `traste=8`, dois `~` em sequência, depois `b` `10` `r` `8`, tudo antes do `.corda` final).
+
+Regras de validação (o parser deve rejeitar ou avisar):
+
+- `r` só é válido depois de pelo menos um `b` na mesma nota — um release sem bend anterior não tem o que soltar.
+- Duas notas do mesmo `item` (separadas por `-`) não podem apontar para a **mesma corda** — fisicamente uma corda só soa uma altura por vez.
+- `traste` fora de 0–24 é inválido (limite físico do braço).
+- `corda` fora de 1–6 é inválido pra afinação de 6 cordas.
 
 ### Exemplo completo — acordes + letra
 
@@ -231,6 +266,29 @@ E|----------------------------------------------------------------|
 | **Persistência de Projetos** | Serializava acordes/tabs embutidos no `.json` do projeto | Grava/lê o `.json` do projeto com uma referência ao arquivo `.cho` (ex.: `"score": "estudo-sol-maior.cho"`), armazenado junto dos stems |
 
 O arquivo `.cho` sendo texto puro também é git-diffável — igual ao resto desta documentação.
+
+### Versionamento do projeto
+
+O `.cho` não precisa de versionamento próprio: diretivas desconhecidas são ignoradas por qualquer leitor ChordPro, então um arquivo mais novo (com uma diretiva que uma versão antiga do app ainda não entende) continua abrindo sem quebrar — essa tolerância já é a estratégia de compatibilidade.
+
+O `.json` do projeto é schema nosso, sem essa tolerância nativa — precisa de versionamento explícito. Formato mínimo:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "b3a1e6c2-8f21-4d9a-9c3e-1a2b3c4d5e6f",
+  "name": "Estudo em Sol Maior",
+  "stems": ["violao.wav", "vocal.wav", "baixo.wav", "bateria.wav"],
+  "score": "estudo-sol-maior.cho",
+  "loop": { "startSec": 0.0, "endSec": 12.0 },
+  "mixer": {
+    "violao": { "volume": 0.9, "mute": false, "solo": true },
+    "vocal": { "volume": 0.7, "mute": false, "solo": false }
+  }
+}
+```
+
+`Persistência de Projetos` lê `schemaVersion` antes de qualquer outra coisa: mesma versão → carrega direto; versão menor → aplica migrações registradas em sequência (cada uma sabe transformar `N` → `N+1`) antes de expor o projeto ao resto do núcleo; versão maior que a suportada → erro explícito ("projeto salvo por uma versão mais nova do app"), nunca uma tentativa silenciosa de leitura parcial.
 
 ### Como fica na tela
 
