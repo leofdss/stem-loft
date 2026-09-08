@@ -97,8 +97,8 @@ Contém toda a lógica de domínio do aplicativo, sem dependência da interface 
 | **Cliente de Separação** (futuro) | Adapter que fala HTTP com a API externa de separação de stems, encapsulando a integração do restante do núcleo com esse serviço. |
 | **Gerenciador de Loops e Marcadores** | Mantém marcador inicial/final do trecho em loop e alimenta o motor de áudio com essa informação para repetição contínua. |
 | **Motor de Áudio** | Decodifica, mixa e reproduz os stems; aplica o loop marcado e os estados de volume/mute/solo; emite eventos de progresso/transporte. |
-| **Persistência de Projetos** | Serializa/lê o estado do projeto (stems, marcadores, mixagem, metadados de partitura) como arquivo `.json`. |
-| **Gerenciador de Metadados de Partitura** | Mantém acordes, tablatura, metrônomo (BPM/fórmula de compasso) e afinação associados ao projeto; persiste esses dados junto com o restante do projeto e os expõe à UI via `Events` para exibição sincronizada com a timeline. |
+| **Persistência de Projetos** | Serializa/lê o estado do projeto (stems, marcadores, mixagem) como arquivo `.json`, incluindo a referência ao arquivo `.cho` de metadados de partitura. |
+| **Gerenciador de Metadados de Partitura** | Faz o parsing do arquivo `.cho` (ChordPro) referenciado pelo projeto — acordes, tablatura, letra, metrônomo e afinação — e expõe o resultado à UI via `Events` para exibição sincronizada com a timeline. |
 
 ### Ponte de Comunicação — Tauri IPC
 
@@ -118,7 +118,7 @@ Interface entre a WebView (Angular) e o núcleo Rust.
 | **Separação Automática** (futuro) | UI para disparar a separação automática de uma faixa em stems via API externa. |
 | **Controles de Transporte** | Play, pause e stop, refletindo o estado emitido pelo motor de áudio. |
 | **Linha do Tempo + Waveform** | Visualização da forma de onda, seleção do trecho em loop e posicionamento dos marcadores. |
-| **Visualização de Acordes/Tablatura** | Exibe acordes e tablatura por batida, sincronizados com a posição de reprodução na Linha do Tempo. |
+| **Visualização de Acordes/Tablatura** | Exibe acordes, tablatura e letra a partir do `.cho` interpretado, sincronizados com a posição de reprodução na Linha do Tempo. |
 
 ### Infraestrutura Local
 
@@ -133,31 +133,29 @@ Interface entre a WebView (Angular) e o núcleo Rust.
 |---|---|
 | **API de Separação de Stems** (futuro) | Serviço externo, acessado via HTTP pelo Cliente de Separação, que recebe uma faixa completa e devolve os stems separados. |
 
-## Metadados de partitura (acordes e tablatura)
+## Metadados de partitura (acordes, tablatura e letra)
 
-Além de stems, marcadores e mixagem, o projeto passa a carregar metadados de partitura: acordes, tablatura por batida, metrônomo (BPM e fórmula de compasso) e afinação. É esse dado que alimenta a **Visualização de Acordes/Tablatura**, permitindo ao músico iniciante acompanhar o que tocar enquanto o loop se repete.
+O projeto passa a carregar metadados de partitura — acordes, tablatura, letra, metrônomo e afinação — persistidos como **arquivo de texto próprio**, não mais embutidos no `.json` do projeto. `Persistência de Projetos` guarda a referência a esse arquivo; `Gerenciador de Metadados de Partitura` faz o parsing dele.
 
-```typescript
-interface Project {
-	id: string; // uuid
-	name: string;
-	sizeInBeats: number; // 240
-	metronome: {
-		time: number; // 80 BPM
-		beats: number; // 4
-	},
-	chords: {
-		name: string; // G
-		beats: number; // 4
-		tabs: string[]; // ["3.6", "5.5", "5.4", "3.5"]  ["0.1-1.2-0.3-2.4-3.5"]
-	}[],
-	tuning: string[], // ["E", "B", "G", "D", "A", "E"]
-}
-```
+### Formato: ChordPro estendido
 
-No array de `tabs`, cada item representa uma batida. Cada item é representado por `"TRASTE.CORDA"`; o traço `"-"` é usado quando mais de uma corda é tocada ao mesmo tempo. `tuning` lista as 6 cordas da mais aguda (corda 1) à mais grave (corda 6) — `["E", "B", "G", "D", "A", "E"]` é a afinação padrão.
+O formato escolhido é o **[ChordPro](https://www.chordpro.org/)** (extensão `.cho`), um padrão aberto de 30+ anos para cifra + letra em texto puro. Ele já resolve boa parte do que a gente precisa de graça:
 
-A parte "TRASTE" de cada item não precisa ser só um número — ela aceita as técnicas de guitarra encadeadas na mesma corda, no formato `<traste><técnica><traste>...`:
+| Necessidade | Recurso nativo do ChordPro |
+|---|---|
+| Acorde + letra juntos, do jeito mais simples possível | `[G]Amazing [C]grace` — colchete antes da sílaba onde o acorde entra |
+| Digitação exata do acorde (qual traste em cada corda) | `{define: G base-fret 1 frets 3 2 0 0 0 3}` |
+| Trecho instrumental / tablatura livre | `{start_of_tab}` … `{end_of_tab}` — bloco monoespaçado, renderizado verbatim |
+| Metadados da música | `{title}`, `{key}`, `{tempo}`, `{time}`, `{capo}` |
+
+Duas extensões próprias, pensadas pra não colidir com a sintaxe padrão:
+
+- **`{tuning: E A D G B E}`** — afinação, corda grave→aguda (mesma ordem que `{define}` já usa para `frets`, então é a mesma convenção em todo o arquivo). A tela ainda desenha a corda aguda em cima — isso é só um detalhe de renderização, independe da ordem de armazenamento.
+- **`{t: mm:ss.cc}`** — âncora de tempo absoluto (estilo arquivo `.lrc` de letra sincronizada), no início de uma linha, dizendo em que segundo do áudio aquela linha (cifra+letra ou tablatura) começa. Fica em `{t: ...}` — uma diretiva própria — em vez de reaproveitar colchetes `[00:12.34]` como o `.lrc` faz, porque colchetes já são a sintaxe de acorde do ChordPro; um parser tentaria ler "00:12.34" como nome de acorde.
+
+Diretivas desconhecidas (`{tuning}`, `{t}`) são o mecanismo de extensão esperado do formato: qualquer leitor de ChordPro que não as reconheça as ignora e ainda renderiza o resto do arquivo corretamente — o arquivo continua útil fora do Stem Player.
+
+A notação de técnicas de guitarra dentro de `{start_of_tab}` continua a mesma já documentada:
 
 | Símbolo | Técnica | Exemplo | Significado |
 |---|---|---|---|
@@ -166,90 +164,73 @@ A parte "TRASTE" de cada item não precisa ser só um número — ela aceita as 
 | `b` | Bend | `7b9` | Puxa a corda no traste 7 até soar como o traste 9 |
 | `r` | Release | `7b9r7` | Bend seguido da liberação de volta ao traste 7 |
 | `/` | Slide ascendente | `5/7` | Desliza do traste 5 até o 7 |
-| `\` | Slide descendente | `7\5` | Desliza do traste 7 até o 5 (no JSON: `"7\\5"`) |
+| `\` | Slide descendente | `7\5` | Desliza do traste 7 até o 5 |
 | `~` | Vibrato | `8~` | Vibra a nota no traste 8 |
 
-As técnicas podem ser combinadas em sequência no mesmo item, como no exemplo abaixo (`8~~b10r8` = toca o traste 8, aplica vibrato, faz bend até soar como o 10 e libera de volta ao 8).
-
-Visualmente, uma progressão de acordes deve ficar assim:
+### Exemplo completo — acordes + letra
 
 ```
-   G                              F    C
-E|---------3---------------3------1----0----| 
-B|-----------3---------------3----1----1----| 
-G|-------4-----4---------4-----4--2----0----| 
-D|-----5---------5-----5----------3----2----| 
-A|---5---------------5------------3----3----| 
-E|-3---------------3--------------1---------|
+{title: Estudo em Sol Maior}
+{artist: Stem Player - exemplo}
+{key: G}
+{time: 4/4}
+{tempo: 80}
+{tuning: E A D G B E}
+
+{define: G base-fret 1 frets 3 2 0 0 0 3}
+{define: C base-fret 1 frets x 3 2 0 1 0}
+{define: D base-fret 1 frets x x 0 2 3 2}
+
+{t: 0:00.00}
+[G]Primeira vez que eu pego o violão
+{t: 0:03.00}
+[C]Os dedos ainda doem, mas eu vou
+{t: 0:06.00}
+[D]Cada acorde é um degrau pra subir
+{t: 0:09.00}
+[G]Um dia essa canção eu vou tocar sem sentir
 ```
 
-E um trecho melódico com técnicas (bend/release), assim:
+Um acorde por linha, um `{define}` por acorde, uma letra original de exemplo — dá pra escrever isso à mão em qualquer editor de texto, sem precisar entender JSON.
+
+### Exemplo com técnicas — trecho instrumental
 
 ```
-E|----------------------------------------------------| 
-B|-8~~b10r8--8~~b12r8--8~b12r-b10~~b12r8--------------| 
-G|----------------------------------------------------| 
-D|----------------------------------------------------| 
-A|----------------------------------------------------| 
-E|----------------------------------------------------|
-```
+{title: Frase com Técnicas}
+{key: Am}
+{time: 4/4}
+{tempo: 100}
+{tuning: E A D G B E}
 
-### Exemplo completo
-
-Progressão de estudo em Sol maior (G · C · D · G), 80 BPM, 4/4 — 4 compassos de 4 batidas, terminando no mesmo acorde em que começa para o loop fechar sem costura:
-
-```json
-{
-  "id": "b3a1e6c2-8f21-4d9a-9c3e-1a2b3c4d5e6f",
-  "name": "Estudo em Sol Maior",
-  "sizeInBeats": 16,
-  "metronome": { "time": 80, "beats": 4 },
-  "chords": [
-    { "name": "G", "beats": 4, "tabs": ["3.6", "2.5", "0.4-0.3-0.2", "3.1"] },
-    { "name": "C", "beats": 4, "tabs": ["3.5", "2.4", "0.3-1.2", "0.1"] },
-    { "name": "D", "beats": 4, "tabs": ["0.4", "2.3", "3.2", "2.1"] },
-    { "name": "G", "beats": 4, "tabs": ["3.6", "2.5", "0.4-0.3-0.2", "3.1"] }
-  ],
-  "tuning": ["E", "B", "G", "D", "A", "E"]
-}
-```
-
-### Exemplo com técnicas
-
-Uma frase em Lá menor pentatônica cobrindo hammer-on, pull-off, bend com release, slide ascendente/descendente e vibrato — tudo dentro de um único acorde "Am", já que a frase não troca de harmonia:
-
-```json
-{
-  "id": "f4a2e9d1-73b5-4a2e-8c1f-9d6b2a7e0c44",
-  "name": "Frase com técnicas — Lá menor pentatônica",
-  "sizeInBeats": 8,
-  "metronome": { "time": 100, "beats": 4 },
-  "chords": [
-    {
-      "name": "Am",
-      "beats": 8,
-      "tabs": ["5h8.2", "8p5.2", "7.3", "5/7.4", "7\\5.4", "7b9.3", "7b9r7.3", "8~.2"]
-    }
-  ],
-  "tuning": ["E", "B", "G", "D", "A", "E"]
-}
-```
-
-- Batida 1–2: hammer-on `5h8` seguido de pull-off `8p5`, na corda B.
-- Batida 4–5: slide ascendente `5/7` e descendente `7\5`, na corda D.
-- Batida 6–7: bend `7b9` e bend com release `7b9r7`, na corda G.
-- Batida 8: vibrato `8~`, na corda B.
-
-Visualmente:
-
-```
+{c: Interlúdio instrumental - Lá menor pentatônica}
+{t: 0:00.00}
+{start_of_tab}
 E|----------------------------------------------------------------|
 B|-5h8-----8p5---------------------------------------------8~-----|
 G|-----------------7-----------------------7b9-----7b9r7----------|
 D|-------------------------5/7-----7\5----------------------------|
 A|----------------------------------------------------------------|
 E|----------------------------------------------------------------|
+{end_of_tab}
 ```
+
+`{c: ...}` é o comentário padrão do ChordPro — aqui descreve o trecho pra quem está lendo/editando o arquivo.
+
+### Como isso resolve os pontos 1–4 da análise
+
+1. **Sem componente de autoria** → resolvido: é um arquivo de texto puro. O usuário escreve/edita em qualquer editor hoje; amanhã, a API de análise de áudio (beat tracking + reconhecimento de acorde + transcrição de letra) pode gerar exatamente esse mesmo texto, linha por linha, sem precisar de UI nenhuma no app pra existir uma primeira versão. O app só precisa saber *ler* o arquivo, não *criar* — a autoria (humana ou automática) acontece fora da fronteira da arquitetura.
+2. **Grade rígida por batida** → resolvido: não existe mais array indexado por batida. Acordes ficam soltos ao lado da sílaba onde entram; tablatura é texto livre dentro de `{start_of_tab}`, com o espaçamento que fizer sentido — sem precisar caber em N slots fixos.
+3. **Redundância não validada** (`sizeInBeats` / `beats` / `tabs.length`) → resolvido: nenhum desses campos existe mais. A duração vem do áudio real (tamanho do stem) ou do último `{t: ...}` do arquivo. `{tempo}`/`{time}` continuam existindo só como metadado de exibição (desenhar a grade de compasso), nunca como fonte de verdade de posição — deixam de ser "múltiplas fontes da mesma verdade".
+4. **Dois domínios de tempo sem conversão** → resolvido: `{t: mm:ss.cc}` usa segundos — o mesmo domínio que `Gerenciador de Loops e Marcadores` já usa pros marcadores de início/fim. Acordes, letra, tablatura e loop agora compartilham nativamente a mesma unidade; BPM vira só uma projeção derivada pra desenhar o grid, não a base de cálculo.
+
+### Impacto na arquitetura
+
+| Componente | Antes | Agora |
+|---|---|---|
+| **Gerenciador de Metadados de Partitura** | Mantinha um objeto `Project.chords` em memória | Faz o parsing do arquivo `.cho` referenciado pelo projeto e expõe o resultado via `Events` |
+| **Persistência de Projetos** | Serializava acordes/tabs embutidos no `.json` do projeto | Grava/lê o `.json` do projeto com uma referência ao arquivo `.cho` (ex.: `"score": "estudo-sol-maior.cho"`), armazenado junto dos stems |
+
+O arquivo `.cho` sendo texto puro também é git-diffável — igual ao resto desta documentação.
 
 ### Como fica na tela
 
