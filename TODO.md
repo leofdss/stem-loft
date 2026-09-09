@@ -56,11 +56,14 @@ começar a codar. Marcar `[x]` conforme forem resolvidas (e refletir a decisão 
 - [x] **Gerenciamento de estado no Angular** — resolvido: **Signals**, nativo do Angular — nada
   de NgRx nem outro pacote externo (npm) além do que o próprio framework já traz, pra minimizar
   superfície de ataque de supply chain (ver [Stack e plataforma](docs/doc.md#stack-e-plataforma)).
-  Como `Commands` se conectam aos componentes já estava decidido: fila de `Commands` com
-  notificação de sucesso/erro por comando; a UI desabilita só o controle que disparou o
-  `Command` até a resposta (evita duplo clique), mas outros controles continuam livres para
-  disparar seus próprios `Commands`, que entram na mesma fila (ver
-  [nota de design](docs/doc.md#nota-de-design-fila-de-commands-no-lado-angular)).
+  Como `Commands` se conectam aos componentes já estava decidido, com uma correção: a fila de
+  `Commands` vive no **núcleo Rust**, não no Angular — o Angular só apresenta o estado que o
+  Rust reporta e envia a intenção do usuário, sem fila/lógica própria (a mesma lógica de "toda
+  inteligência fica no Rust" usada pra minimizar custo de troca de framework no futuro). Efeito
+  pro usuário continua o mesmo: o controle que disparou o `Command` fica desabilitado até a
+  resposta (evita duplo clique), outros controles continuam livres para disparar seus próprios
+  `Commands`, que o núcleo processa em sequência. Ver
+  [nota de design](docs/doc.md#nota-de-design-fila-de-commands-no-núcleo-rust).
 - [x] **UX de erro** — resolvido: **modal**, não toast nem banner persistente, pra `audio_error`
   e `score_parse_error`. O modal é só sobre apresentação — não pausa nem desfaz nada que já
   estava rodando no núcleo; `score_parse_error` continua sem travar o resto do app (dispensa o
