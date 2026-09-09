@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/cargo_check_on_rust_edit.py",
+            "statusMessage": "Rodando cargo check...",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/bash_guard.py",
+            "statusMessage": "Verificando regras do projeto..."
+          }
+        ]
+      }
+    ]
+  }
+}
