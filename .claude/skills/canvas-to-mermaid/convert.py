@@ -225,8 +225,10 @@ def short_label(text: str) -> str:
     escapados — só para uso dentro de rótulos Mermaid (que passam por um renderer HTML
     internamente; um `<`/`>` cru pode ser interpretado como início de tag)."""
     lines = [l for l in re.split(r"\r?\n", text) if l.strip()]
-    label = first_sentence_plain(text) if len(lines) <= 1 else "<br/>".join(lines)
-    return escape_mermaid_label(label)
+    if len(lines) <= 1:
+        return escape_mermaid_label(first_sentence_plain(text))
+    # Escapa cada linha individualmente para não escapar o próprio `<br/>` de junção.
+    return "<br/>".join(escape_mermaid_label(l) for l in lines)
 
 
 def escape_mermaid_label(s: str) -> str:

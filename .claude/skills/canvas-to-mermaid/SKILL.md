@@ -16,7 +16,7 @@ final deve ser rastreável 1:1 aos nós e arestas do canvas.
 
 ## Use o script primeiro — não faça a parte mecânica de cabeça
 
-Este diretório tem um conversor determinístico, `convert.ts`, que já implementa os
+Este diretório tem um conversor determinístico, `convert.py`, que já implementa os
 Passos 0–6 e a checklist do Passo 8 (containment geométrico, classificação de nós,
 geração de IDs/slugs, escaping, orientação do diagrama, tabelas). **Rode-o antes de
 tentar fazer qualquer parte disso por interpretação própria** — contas de geometria,
@@ -24,11 +24,10 @@ escaping e unicidade de ID são exatamente o tipo de coisa que um modelo (simple
 não) erra por distração, e o script nunca erra isso.
 
 ```bash
-node <diretório-desta-skill>/convert.ts <entrada.canvas> [saida.md]
+python3 <diretório-desta-skill>/convert.py <entrada.canvas> [saida.md]
 ```
 
-- Requer Node.js 22.6+ (roda `.ts` nativamente, sem instalar nada). Se o ambiente não
-  suportar, tente `npx tsx <diretório-desta-skill>/convert.ts ...`.
+- Requer só Python 3 (biblioteca padrão, sem dependências externas).
 - Se `saida.md` for omitido, o script grava ao lado do `.canvas` de entrada, mesmo nome
   com extensão `.md`.
 - O script imprime no terminal um relatório: quantos grupos/nós/blocos descritivos e
@@ -44,7 +43,7 @@ node <diretório-desta-skill>/convert.ts <entrada.canvas> [saida.md]
   documentam exatamente a mesma lógica que o script implementa, para quando não há
   como rodar código.
 
-## Algoritmo manual (o que o script faz por baixo dos panos / fallback sem Node)
+## Algoritmo manual (o que o script faz por baixo dos panos / fallback sem Python)
 
 ## Passo 0 — Ler o arquivo e entender o formato
 
