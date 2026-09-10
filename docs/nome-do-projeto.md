@@ -84,15 +84,17 @@ conflito óbvio, mas não substitui uma checagem formal antes de qualquer
 passo com consequência prática — publicar em loja de app, registrar domínio
 ou marca, ou uso comercial de terceiros. Nenhuma das duas é advogado.
 
-## Pendências decorrentes desta decisão (fora do escopo deste documento)
+## Renomeação aplicada
 
-Renomear "Stem Player" para "StemLoft" em code/infra ainda não foi feito.
-Pontos que vão precisar de atualização quando isso acontecer:
+"Stem Player" foi trocado por "StemLoft" em todo o texto do repositório:
+`README.md` (título), `docs/doc.md`, `docs/Arquitetura.canvas`, agents e
+skills em `.claude/`, e a imagem de desenvolvimento do Distrobox
+(`distrobox/Containerfile`, `distrobox/README.md`,
+`.github/workflows/build-dev-image.yml` — `stem-player-dev` virou
+`stemloft-dev`).
 
-- Nome da pasta/repositório local (`stem-player`)
-- `README.md` (título, se vier a ter um)
-- Nome da imagem de desenvolvimento do Distrobox
-  (`distrobox/Containerfile`, `distrobox/README.md`,
-  `.github/workflows/build-dev-image.yml` — hoje publicam/documentam
-  `stem-player-dev`)
-- Referências textuais dentro de `docs/doc.md` e `TODO.md`
+Uma pendência ficou de fora de propósito, por afetar o ambiente de trabalho
+em uso (IDE aberto, sessão de terminal ativa) em vez de só conteúdo
+versionado: renomear a pasta/repositório local (`stem-player` →
+`stemloft` ou similar). Isso precisa ser feito manualmente, fora de uma
+sessão com arquivos abertos nela.

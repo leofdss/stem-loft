@@ -1,6 +1,6 @@
 ---
 name: atomic-persistence
-description: Padrão de escrita em disco da Persistência de Projetos no Stem Player — write-to-temp-file + rename sem exceção, quando gravar (checkpoint com debounce, não a cada Command), e invalidação de cache. Use ao adicionar qualquer escrita nova em disco (projeto .json, cache de waveform, .cho futuro) ou ao mexer em quando/como o projeto é salvo.
+description: Padrão de escrita em disco da Persistência de Projetos no StemLoft — write-to-temp-file + rename sem exceção, quando gravar (checkpoint com debounce, não a cada Command), e invalidação de cache. Use ao adicionar qualquer escrita nova em disco (projeto .json, cache de waveform, .cho futuro) ou ao mexer em quando/como o projeto é salvo.
 ---
 
 # Persistência: escrita atômica e checkpoints

@@ -1,7 +1,7 @@
 # Imagem de desenvolvimento (Distrobox)
 
-`Containerfile` desta pasta define a imagem de desenvolvimento do Stem
-Player: Arch Linux (`quay.io/toolbx/arch-toolbox`, mantida pelo projeto
+`Containerfile` desta pasta define a imagem de desenvolvimento do StemLoft:
+Arch Linux (`quay.io/toolbx/arch-toolbox`, mantida pelo projeto
 Toolbx — irmão do Distrobox, mesma família de ferramentas) com Python,
 Node.js + fnm, Rust, git, Claude Code e VS Code.
 
@@ -73,22 +73,22 @@ pública, buildada via GitHub Actions (`.github/workflows/build-dev-image.yml`).
 ## Build e teste local
 
 ```bash
-podman build -t stem-player-dev -f distrobox/Containerfile .
-podman run --rm -it stem-player-dev bash -lc \
+podman build -t stemloft-dev -f distrobox/Containerfile .
+podman run --rm -it stemloft-dev bash -lc \
   'git --version && python --version && node --version && fnm --version && rustc --version && claude --version && code --version'
 ```
 
 ## Publicação (GitHub Actions)
 
-O workflow builda e publica em `ghcr.io/<owner>/stem-player-dev` a cada push
+O workflow builda e publica em `ghcr.io/<owner>/stemloft-dev` a cada push
 que mude o `Containerfile`, semanalmente (segundas, 06:00 UTC) e sob demanda
 (`workflow_dispatch`). Ele só roda depois que este repositório existir no
 GitHub e o push for feito para lá — hoje o projeto ainda é só local.
 
 **Passo manual único, na primeira publicação:** pacotes no GHCR nascem
 privados por padrão, mesmo em repositório público. Depois do primeiro build
-publicado, é preciso ir em *Package settings* do pacote `stem-player-dev` (em
-`github.com/<owner>/stem-player-dev/pkgs/container/stem-player-dev`, aba
+publicado, é preciso ir em *Package settings* do pacote `stemloft-dev` (em
+`github.com/<owner>/stemloft-dev/pkgs/container/stemloft-dev`, aba
 *Package settings*) e trocar a visibilidade para *Public* — só nessa vez.
 
 ## Próximo passo

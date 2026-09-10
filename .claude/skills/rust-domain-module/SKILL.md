@@ -1,11 +1,11 @@
 ---
 name: rust-domain-module
-description: Como estruturar um módulo de domínio novo (ou uma struct nova dentro de um módulo existente) no núcleo Rust do Stem Player — construtor com injeção manual de dependências, sem DI container, sem generics/trait objects/macros desnecessários. Use ao criar um novo módulo Rust, uma nova struct de domínio, ou ao decidir "isso é idiomático demais?".
+description: Como estruturar um módulo de domínio novo (ou uma struct nova dentro de um módulo existente) no núcleo Rust do StemLoft — construtor com injeção manual de dependências, sem DI container, sem generics/trait objects/macros desnecessários. Use ao criar um novo módulo Rust, uma nova struct de domínio, ou ao decidir "isso é idiomático demais?".
 ---
 
 # Estruturar um módulo de domínio no núcleo Rust
 
-O núcleo Rust do Stem Player é escrito por quem vem de TypeScript
+O núcleo Rust do StemLoft é escrito por quem vem de TypeScript
 (Angular/Nest.js), não de background Rust. A regra de ouro, documentada em
 [`doc.md`](../../../docs/doc.md#nota-de-design-padrões-familiares-a-quem-vem-de-typescript):
 **"dá pra entender vindo de Angular/Nest.js sem aprender Rust avançado

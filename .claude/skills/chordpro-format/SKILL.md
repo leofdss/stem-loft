@@ -1,11 +1,11 @@
 ---
 name: chordpro-format
-description: Gramática e regras de validação do dialeto ChordPro estendido (.cho) usado pelo Gerenciador de Metadados de Partitura do Stem Player — âncoras {t:}, um acorde por linha, gramática da tablatura, resolução de startSec/endSec. Use ao implementar ou testar o parser do .cho, ou ao criar/editar arquivos .cho de exemplo/teste.
+description: Gramática e regras de validação do dialeto ChordPro estendido (.cho) usado pelo Gerenciador de Metadados de Partitura do StemLoft — âncoras {t:}, um acorde por linha, gramática da tablatura, resolução de startSec/endSec. Use ao implementar ou testar o parser do .cho, ou ao criar/editar arquivos .cho de exemplo/teste.
 ---
 
 # Formato `.cho` (ChordPro estendido)
 
-O Stem Player usa [ChordPro](https://www.chordpro.org/) padrão mais duas
+O StemLoft usa [ChordPro](https://www.chordpro.org/) padrão mais duas
 extensões próprias e uma restrição de dialeto. Fonte completa, com exemplos:
 [doc.md — Metadados de partitura](../../../docs/doc.md#metadados-de-partitura-acordes-tablatura-e-letra).
 Este skill é o resumo operacional pra implementar/testar o parser sem ter
@@ -22,7 +22,7 @@ que reconstituir as regras a cada vez.
   `00.5`, `1:5.3` (faltam dígitos).
 
 Diretivas desconhecidas (incluindo essas duas, pra qualquer leitor ChordPro
-que não é o Stem Player) são ignoradas, não erro — é o mecanismo de extensão
+que não é o StemLoft) são ignoradas, não erro — é o mecanismo de extensão
 esperado do formato. Não trate `{tuning}`/`{t}` como obrigatórias pra um
 arquivo ser "válido" fora do nosso parser.
 

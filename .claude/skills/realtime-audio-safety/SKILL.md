@@ -1,6 +1,6 @@
 ---
 name: realtime-audio-safety
-description: Checklist de segurança para qualquer mudança que toque o Motor de Áudio ou o callback de tempo real do cpal no Stem Player — o que pode e não pode rodar dentro do callback, como crossfade/decodificação/volume-mute-solo são resolvidos fora dele. Use antes de editar qualquer código perto de cpal, decodificação, mixagem, ou do loop de reprodução.
+description: Checklist de segurança para qualquer mudança que toque o Motor de Áudio ou o callback de tempo real do cpal no StemLoft — o que pode e não pode rodar dentro do callback, como crossfade/decodificação/volume-mute-solo são resolvidos fora dele. Use antes de editar qualquer código perto de cpal, decodificação, mixagem, ou do loop de reprodução.
 ---
 
 # Segurança da thread de tempo real (Motor de Áudio)

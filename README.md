@@ -1,6 +1,8 @@
+# StemLoft
+
 ## Doc
 
-[doc](./docs/doc.md)
+[doc](./docs/doc.md) · [por que esse nome](./docs/nome-do-projeto.md)
 
 ## Licença
 

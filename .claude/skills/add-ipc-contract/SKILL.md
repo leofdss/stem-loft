@@ -1,11 +1,11 @@
 ---
 name: add-ipc-contract
-description: Roteiro para adicionar ou alterar um Command (Angular → Rust) ou Event (Rust → Angular) no Stem Player, respeitando as decisões já fechadas em docs/doc.md (fila no núcleo, Sessão como roteador fino, Signals sem NgRx, sem atualização otimista). Use sempre que for expor uma nova ação de UI, um novo estado a reportar, ou perguntar "onde entra esse Command/Event".
+description: Roteiro para adicionar ou alterar um Command (Angular → Rust) ou Event (Rust → Angular) no StemLoft, respeitando as decisões já fechadas em docs/doc.md (fila no núcleo, Sessão como roteador fino, Signals sem NgRx, sem atualização otimista). Use sempre que for expor uma nova ação de UI, um novo estado a reportar, ou perguntar "onde entra esse Command/Event".
 ---
 
 # Adicionar um Command ou Event
 
-Este é o ponto de entrada mais comum de trabalho no Stem Player: quase toda
+Este é o ponto de entrada mais comum de trabalho no StemLoft: quase toda
 feature nova passa por adicionar um `Command` (Angular → Rust) e/ou um
 `Event` (Rust → Angular). As decisões de design que governam isso já estão
 fechadas — este skill existe pra você não precisar re-decidir nada, só seguir

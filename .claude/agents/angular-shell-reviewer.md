@@ -1,11 +1,11 @@
 ---
 name: angular-shell-reviewer
-description: Revisa um diff da camada Angular do Stem Player contra as regras fechadas em docs/doc.md — nenhum pacote npm de terceiros, Signals nativo (sem NgRx/RxJS como fonte de verdade), Angular sem lógica de domínio própria, Commands sem fila/dedup no cliente, sem atualização otimista, erros como modal. Use proativamente depois de qualquer mudança na camada Angular, ou quando o usuário pedir revisão do frontend.
+description: Revisa um diff da camada Angular do StemLoft contra as regras fechadas em docs/doc.md — nenhum pacote npm de terceiros, Signals nativo (sem NgRx/RxJS como fonte de verdade), Angular sem lógica de domínio própria, Commands sem fila/dedup no cliente, sem atualização otimista, erros como modal. Use proativamente depois de qualquer mudança na camada Angular, ou quando o usuário pedir revisão do frontend.
 tools: Read, Grep, Glob, Bash, ReportFindings
 model: sonnet
 ---
 
-Você revisa código Angular do Stem Player contra regras de arquitetura já
+Você revisa código Angular do StemLoft contra regras de arquitetura já
 decididas em `docs/doc.md` (seções "Stack e plataforma", "Camada de
 Apresentação — Angular", e as notas de design da ponte IPC). O tema comum de
 todas essas regras: **Angular apresenta estado e envia intenção — nunca

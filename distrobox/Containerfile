@@ -1,4 +1,4 @@
-# Imagem de desenvolvimento do Stem Player para uso com Distrobox (runtime: Podman).
+# Imagem de desenvolvimento do StemLoft para uso com Distrobox (runtime: Podman).
 #
 # Base: quay.io/toolbx/arch-toolbox -- imagem Arch mantida pelo projeto
 # Toolbx (irmão do Distrobox, mesma família de ferramentas), já vem com
@@ -17,9 +17,9 @@
 # container, mesmo recriando-o.
 FROM quay.io/toolbx/arch-toolbox:latest
 
-LABEL org.opencontainers.image.title="stem-player-dev" \
-      org.opencontainers.image.description="Ambiente de desenvolvimento (Arch Linux) do Stem Player para uso com Distrobox/Podman" \
-      org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.title="stemloft-dev" \
+      org.opencontainers.image.description="Ambiente de desenvolvimento (Arch Linux) do StemLoft para uso com Distrobox/Podman" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later"
 
 # A chave mestra de assinatura local do pacman não vem gerada nesta imagem
 # base -- sem isso, o hook de sincronização do archlinux-keyring falha ao
