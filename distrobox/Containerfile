@@ -1,0 +1,103 @@
+# Imagem de desenvolvimento do Stem Player para uso com Distrobox (runtime: Podman).
+#
+# Base: quay.io/toolbx/arch-toolbox -- imagem Arch mantida pelo projeto
+# Toolbx (irmão do Distrobox, mesma família de ferramentas), já vem com
+# base-devel (gcc, make, pkgconf, ...), git e sudo prontos.
+#
+# Regra de ouro deste Containerfile: NADA é instalado dentro de /home. O
+# Distrobox monta o HOME do host por cima do HOME do container -- qualquer
+# coisa gravada em /home/<user> durante o build fica invisível em tempo de
+# execução (ou pior, some sem aviso). Todo pacote/ferramenta abaixo vai para
+# caminhos de sistema (/usr, /opt), que sobrevivem ao overlay do HOME.
+#
+# Autenticação do git e do Claude Code (~/.gitconfig, ~/.claude, etc.) não
+# precisa de nenhum tratamento especial aqui: por já viverem em HOME, ficam
+# automaticamente compartilhadas com o host pelo comportamento padrão do
+# Distrobox -- login feito uma vez no host continua valendo dentro do
+# container, mesmo recriando-o.
+FROM quay.io/toolbx/arch-toolbox:latest
+
+LABEL org.opencontainers.image.title="stem-player-dev" \
+      org.opencontainers.image.description="Ambiente de desenvolvimento (Arch Linux) do Stem Player para uso com Distrobox/Podman" \
+      org.opencontainers.image.licenses="MIT"
+
+# A chave mestra de assinatura local do pacman não vem gerada nesta imagem
+# base -- sem isso, o hook de sincronização do archlinux-keyring falha ao
+# tentar validar assinaturas ("no secret key available to sign with")
+# durante o -Syu abaixo. --init é seguro de rodar de novo caso a imagem base
+# passe a trazer isso pronto no futuro.
+RUN pacman-key --init && pacman-key --populate archlinux
+
+# Espelhos + repositórios atualizados antes de qualquer instalação, e
+# --needed em toda chamada pacman para tornar o build idempotente em rebuilds.
+RUN pacman -Syu --noconfirm --needed \
+    # Controle de versão
+    git \
+    # Python -- usado pelos hooks em .claude/hooks (só biblioteca padrão)
+    python \
+    # Node.js -- runtime "de sistema", sempre a versão mais recente do repo
+    # (fnm, abaixo, cobre pin de versão por projeto quando precisar)
+    nodejs \
+    npm \
+    fnm \
+    # Rust -- toolchain estável via pacote oficial (não rustup: rustup vive
+    # em $HOME/.cargo e seria escondido pelo overlay de HOME do Distrobox).
+    # O Arch é rolling release, então "pacman -Syu" já mantém isso na versão
+    # estável mais recente, na mesma filosofia que o projeto já aplica a
+    # Tauri/Angular (ver docs/doc.md#stack-e-plataforma).
+    rust \
+    # Dependências de build do Tauri v2 no Linux (lista oficial do Tauri
+    # para Arch: https://v2.tauri.app/start/prerequisites/)
+    webkit2gtk-4.1 \
+    curl \
+    wget \
+    file \
+    openssl \
+    appmenu-gtk-module \
+    gtk3 \
+    libappindicator-gtk3 \
+    librsvg \
+    patchelf \
+    # Saída de áudio (cpal/ALSA) usada pelo Motor de Áudio em tempo de build
+    alsa-lib \
+    # sudo já vem na imagem base do Toolbx, mas é o mecanismo que o
+    # Distrobox usa para dar privilégios ao usuário do host dentro do
+    # container -- deixando explícito aqui para não depender da composição
+    # da imagem base.
+    sudo \
+    # VS Code (Electron) precisa da libsecret (keyring de credenciais) e do
+    # NSS/NSPR (libnss3/libnspr4, carregados em tempo de execução)
+    libsecret \
+    nss \
+ && pacman -Scc --noconfirm \
+ && rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/*
+
+# Claude Code (CLI) -- não existe pacote oficial no repo do Arch. Instalado
+# via npm global como root, então vai para /usr/lib/node_modules e
+# /usr/bin/claude (prefixo do npm do sistema), nunca para HOME.
+# --allow-scripts é necessário: o npm recente bloqueia por padrão o
+# postinstall do pacote (que baixa o binário nativo da CLI); sem ele,
+# `claude` fica instalado mas não funciona ("native binary not installed").
+RUN npm install --global --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code \
+ && npm cache clean --force
+
+# VS Code -- também não existe pacote oficial no repo do Arch (só via AUR,
+# que depende de build/manutenção de terceiros). Para manter a promessa de
+# "funciona a longo prazo" sem depender do AUR, instalamos o tarball oficial
+# publicado pela própria Microsoft, extraído para /opt (fora de HOME) com um
+# symlink em /usr/local/bin.
+RUN curl -fsSL "https://update.code.visualstudio.com/latest/linux-x64/stable" -o /tmp/vscode.tar.gz \
+ && mkdir -p /opt/vscode \
+ && tar -xzf /tmp/vscode.tar.gz -C /opt/vscode --strip-components=1 \
+ && rm -f /tmp/vscode.tar.gz \
+ && ln -s /opt/vscode/bin/code /usr/local/bin/code
+
+# O binário do VS Code detecta que está rodando sob WSL (comum no host deste
+# projeto) e bloqueia em um prompt interativo "Do you want to continue
+# anyway? [y/N]" sugerindo usar o VS Code do lado Windows via Remote-WSL.
+# Sem essa variável, `code` trava esperando stdin em vez de rodar.
+ENV DONT_PROMPT_WSL_INSTALL=1
+
+# Nenhum USER/HOME é definido aqui de propósito: o Distrobox cria o usuário
+# (mesmo UID/GID/nome do host), monta o HOME do host e ajusta o sudo na
+# criação do container -- não no build da imagem.
