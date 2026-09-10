@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """PostToolUse hook (matcher: Write|Edit).
 
-Se o arquivo editado for .rs e existir um Cargo.toml em algum diretorio acima
-dele, roda `cargo check` nesse crate. Silencioso (exit 0, sem output) se nao
-houver Cargo.toml (projeto Rust ainda nao iniciado), se o arquivo nao for
-.rs, ou se `cargo` nao estiver instalado.
+If the edited file is .rs and a Cargo.toml exists in some directory above
+it, runs `cargo check` in that crate. Silent (exit 0, no output) if there's
+no Cargo.toml (the Rust project hasn't started yet), if the file isn't .rs,
+or if `cargo` isn't installed.
 
-Em falha de compilacao, sai com status 2 e imprime os erros do cargo em
-stderr -- isso volta como feedback ao agente, para autocorrecao imediata sem
-precisar que o usuario rode `cargo build` manualmente.
+On a compile failure, exits with status 2 and prints cargo's errors to
+stderr -- this comes back as feedback to the agent, for immediate
+self-correction without needing the user to run `cargo build` manually.
 """
 import json
 import os
@@ -49,7 +49,7 @@ def main() -> int:
     )
 
     if result.returncode != 0:
-        sys.stderr.write(f"cargo check falhou em {directory}:\n")
+        sys.stderr.write(f"cargo check failed in {directory}:\n")
         sys.stderr.write(result.stdout)
         sys.stderr.write(result.stderr)
         return 2

@@ -1,80 +1,82 @@
 ---
 name: atomic-persistence
-description: Padrão de escrita em disco da Persistência de Projetos no StemLoft — write-to-temp-file + rename sem exceção, quando gravar (checkpoint com debounce, não a cada Command), e invalidação de cache. Use ao adicionar qualquer escrita nova em disco (projeto .json, cache de waveform, .cho futuro) ou ao mexer em quando/como o projeto é salvo.
+description: Disk-write pattern for Project Persistence in StemLoft — write-to-temp-file + rename with no exceptions, when to write (a debounced checkpoint, not on every Command), and cache invalidation. Use when adding any new disk write (project .json, waveform cache, future .cho) or when touching when/how the project is saved.
 ---
 
-# Persistência: escrita atômica e checkpoints
+# Persistence: atomic writes and checkpoints
 
-## A regra sem exceção
+## The rule, no exceptions
 
-**Toda** escrita em disco feita por `Persistência de Projetos` é atômica:
-grava num arquivo temporário no mesmo diretório do destino, depois `rename`
-pro caminho final. `rename` é atômico a nível de sistema de arquivos — o
-arquivo anterior nunca fica truncado ou parcialmente escrito se o app
-crashar no meio. Pior caso possível: perder a escrita em andamento, nunca
-corromper o que já existia. Isso vale pro `.json` do projeto, pro cache de
-waveform, e vai valer pro `.cho` quando a escrita de acordes entrar (pós-v1).
-Ver
-[nota de design completa](../../../docs/doc.md#nota-de-design-quando-persistência-de-projetos-grava).
+**Every** disk write made by `Project Persistence` is atomic: it writes to a
+temporary file in the same directory as the destination, then `rename`s it
+to the final path. `rename` is atomic at the file-system level — the
+previous file is never left truncated or partially written if the app
+crashes mid-write. Worst case possible: losing the write in progress, never
+corrupting what already existed. This applies to the project's `.json`, to
+the waveform cache, and will apply to the `.cho` once chord writing lands
+(post-v1). See the
+[full design note](../../../docs/architecture.md#design-note-when-project-persistence-writes).
 
-Se você está escrevendo um `File::write`/`std::fs::write` direto no caminho
-final de algo que `Persistência de Projetos` é dona, pare — isso é o
-antipadrão que essa decisão existe pra evitar.
+If you're writing a `File::write`/`std::fs::write` directly to the final
+path of something `Project Persistence` owns, stop — that's the antipattern
+this decision exists to prevent.
 
-## Quando gravar (não é "a cada mudança")
+## When to write (not "on every change")
 
-`Mixer de Stems` gera `Commands` a cada tick de um fader sendo arrastado —
-gravar a cada um seria I/O descartado e risco de escrita concorrente/parcial.
-O padrão:
+`Stem Mixer` generates `Commands` on every tick of a fader being dragged —
+writing on every one of them would be wasted I/O and a risk of
+concurrent/partial writes. The pattern:
 
-- Mudança de estado marca o projeto como "sujo" (dirty flag), não dispara
-  escrita imediata.
-- Escrita real acontece em **checkpoints**: debounce de inatividade (alguns
-  ms sem novos `Commands`) ou eventos definitivos (pausar playback, fechar o
-  projeto).
-- **Leitura continua imediata** — só a escrita é agrupada.
+- A state change marks the project "dirty," it doesn't trigger an immediate
+  write.
+- The actual write happens at **checkpoints**: an inactivity debounce (a few
+  ms with no new `Commands`) or definitive events (pausing playback, closing
+  the project).
+- **Reading stays immediate** — only the write is batched.
 
-Se você está adicionando um Command que muda estado persistido, não invente
-um checkpoint próprio pra ele — use o mecanismo de dirty-flag + debounce que
-já existe. Um checkpoint por feature é o mesmo erro que "um `Mutex` por
-feature" no núcleo: fragmenta um mecanismo que devia ser único.
+If you're adding a Command that changes persisted state, don't invent your
+own checkpoint for it — use the existing dirty-flag + debounce mechanism. A
+checkpoint per feature is the same mistake as "a `Mutex` per feature" in the
+core: it fragments a mechanism that should be a single one.
 
-## Cache da waveform (aplicação concreta do padrão)
+## Waveform cache (a concrete application of the pattern)
 
-- Calculado uma vez por stem (decodificação inteira é cara — perf em
-  hardware fraco é requisito do projeto, não nice-to-have).
-- Gravado em disco junto do projeto, campo `stems[].waveformCache` no
-  `.json`, com a mesma escrita atômica de qualquer outro arquivo.
-- **Invalidado se o stem for reimportado/substituído** — se você está
-  mexendo no fluxo de reimportação e não está descartando o cache antigo,
-  isso é bug: a waveform exibida ficaria dessincronizada do áudio real.
-- Ver [nota de design completa](../../../docs/doc.md#nota-de-design-cache-da-waveform-em-disco).
+- Computed once per stem (decoding the whole thing is expensive — perf on
+  weak hardware is a project requirement, not a nice-to-have).
+- Written to disk alongside the project, the `stems[].waveformCache` field
+  in the `.json`, with the same atomic write as any other file.
+- **Invalidated if the stem is re-imported/replaced** — if you're touching
+  the re-import flow and not discarding the old cache, that's a bug: the
+  displayed waveform would drift out of sync with the actual audio.
+- See the [full design note](../../../docs/architecture.md#design-note-waveform-cache-on-disk).
 
-## Versionamento do `.json` do projeto
+## Versioning the project's `.json`
 
-O `.json` do projeto **não** tem a tolerância a campos desconhecidos que o
-`.cho` tem (diretivas ChordPro desconhecidas são só ignoradas por outros
-leitores). Por isso `schemaVersion` é lido antes de qualquer outra coisa:
+The project's `.json` does **not** have the tolerance for unknown fields
+that the `.cho` has (unknown ChordPro directives are just ignored by other
+readers). That's why `schemaVersion` is read before anything else:
 
-- Mesma versão → carrega direto.
-- Versão menor → aplica migrações registradas em sequência (cada uma sabe
-  transformar `N` → `N+1`) antes de expor o projeto ao resto do núcleo.
-- Versão maior que a suportada → erro explícito ("projeto salvo por uma
-  versão mais nova do app"), **nunca** uma tentativa silenciosa de leitura
-  parcial.
+- Same version → loads directly.
+- Lower version → applies registered migrations in sequence (each one knows
+  how to transform `N` → `N+1`) before exposing the project to the rest of
+  the core.
+- Higher version than supported → an explicit error ("project saved by a
+  newer version of the app"), **never** a silent attempt at a partial read.
 
-Se você está adicionando um campo novo ao schema do `.json`, pergunte: isso
-quebra a leitura de um projeto salvo por uma versão anterior do app? Se sim,
-precisa de uma migração registrada — não é opcional, mesmo que pareça "só um
-campo a mais". Ver
-[schema completo e exemplo](../../../docs/doc.md#versionamento-do-projeto).
+If you're adding a new field to the `.json` schema, ask: does this break
+reading a project saved by an earlier app version? If so, it needs a
+registered migration — it's not optional, even if it looks like "just one
+more field." See the
+[full schema and example](../../../docs/architecture.md#project-versioning).
 
-## Checklist rápido
+## Quick checklist
 
-- [ ] A escrita passa por write-to-temp-file + rename, sem exceção?
-- [ ] A escrita está agrupada num checkpoint (dirty flag + debounce ou evento
-      definitivo), não disparada a cada `Command`?
-- [ ] Se isso invalida um cache existente (waveform, e no futuro outros),
-      o código de invalidação está no lugar certo (reimportação/substituição)?
-- [ ] Se o schema do `.json` mudou de forma incompatível, existe migração
-      `N → N+1` registrada?
+- [ ] Does the write go through write-to-temp-file + rename, with no
+      exceptions?
+- [ ] Is the write batched into a checkpoint (dirty flag + debounce or a
+      definitive event), not fired on every `Command`?
+- [ ] If this invalidates an existing cache (waveform, and others in the
+      future), is the invalidation code in the right place
+      (re-import/replacement)?
+- [ ] If the `.json` schema changed in an incompatible way, is there a
+      registered `N → N+1` migration?

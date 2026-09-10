@@ -1,71 +1,73 @@
 ---
 name: rust-domain-module
-description: Como estruturar um módulo de domínio novo (ou uma struct nova dentro de um módulo existente) no núcleo Rust do StemLoft — construtor com injeção manual de dependências, sem DI container, sem generics/trait objects/macros desnecessários. Use ao criar um novo módulo Rust, uma nova struct de domínio, ou ao decidir "isso é idiomático demais?".
+description: How to structure a new domain module (or a new struct within an existing module) in StemLoft's Rust core — a constructor with manual dependency injection, no DI container, no unnecessary generics/trait objects/macros. Use when creating a new Rust module, a new domain struct, or when deciding "is this too idiomatic?"
 ---
 
-# Estruturar um módulo de domínio no núcleo Rust
+# Structuring a domain module in the Rust core
 
-O núcleo Rust do StemLoft é escrito por quem vem de TypeScript
-(Angular/Nest.js), não de background Rust. A regra de ouro, documentada em
-[`doc.md`](../../../docs/doc.md#nota-de-design-padrões-familiares-a-quem-vem-de-typescript):
-**"dá pra entender vindo de Angular/Nest.js sem aprender Rust avançado
-primeiro"** vale mais que "idiomático pros padrões da comunidade Rust". Isso
-só cede se performance for **muito** afetada, medido — não como escolha
-default.
+StemLoft's Rust core is written by people coming from TypeScript
+(Angular/Nest.js), not from a Rust background. The golden rule, documented in
+[`architecture.md`](../../../docs/architecture.md#design-note-patterns-familiar-to-people-coming-from-typescript):
+**"understandable coming from Angular/Nest.js without learning advanced Rust
+first"** outweighs "idiomatic by Rust community standards." This only gives
+way if performance is **significantly** affected, and measured — not as the
+default choice.
 
-## O paralelo mental (use-o para decidir, não só para explicar)
+## The mental parallel (use it to decide, not just to explain)
 
-- **Módulo de domínio ≈ serviço injetável do Nest.js.** Uma `struct` com
-  métodos públicos e um `new(...)` que recebe as dependências explicitamente
-  — igual `@Injectable()` recebendo no construtor, só que sem container: a
-  "injeção" é passar os `Arc<...>` à mão, uma vez, na inicialização do
-  `AppState`.
-- **`Gerenciador de Sessão / Estado` ≈ controller do Nest.js.** Recebe,
-  despacha pro service (módulo de domínio), devolve — nunca acumula regra de
-  negócio própria. Ver skill `add-ipc-contract` pra decidir onde um handler
-  novo deve morar.
+- **Domain module ≈ Nest.js injectable service.** A `struct` with public
+  methods and a `new(...)` that receives its dependencies explicitly — just
+  like `@Injectable()` receiving them in its constructor, except with no
+  container: the "injection" is passing the `Arc<...>` values by hand, once,
+  when initializing `AppState`.
+- **`Session/State Manager` ≈ Nest.js controller.** Receives, dispatches to
+  the service (domain module), returns — never accumulates its own business
+  rules. See the `add-ipc-contract` skill to decide where a new handler
+  should live.
 
-## Checklist ao escrever a struct
+## Checklist when writing the struct
 
-1. **Construtor explícito, sem DI framework.** `pub fn new(dep_a: Arc<DepA>, dep_b: Arc<DepB>) -> Self`.
-   Nada de `#[derive(Inject)]`, service locator, ou registro dinâmico.
-2. **Prefira explícito e repetitivo a "esperto".** Generics pesados, macros,
-   trait objects em excesso, lifetimes elaborados: só se as duas opções
-   resolverem o mesmo problema com a mesma clareza E a versão simples for
-   comprovadamente lenta demais. Na dúvida, escreva a versão chata primeiro.
-3. **Concorrência: o modelo mais simples de raciocinar, não o mais rápido em
-   teoria.** Estado compartilhado do módulo vive atrás de um único
-   `Arc<Mutex<...>>` (ou, no máximo, um `Mutex` por módulo — nunca um por
-   feature). `lock() → muda o que precisa → solta o lock`. Só considere
-   canais, actors ou granularidade maior de lock se profiling mostrar
-   contenção real — não antes, não como otimização especulativa. Ver
-   [nota de design completa](../../../docs/doc.md#nota-de-design-modelo-de-concorrência-do-estado-compartilhado).
-4. **A thread de tempo real do `cpal` nunca toca esse `Mutex`.** Se o módulo
-   que você está escrevendo tem qualquer relação com o callback de áudio,
-   pare e carregue o skill `realtime-audio-safety` — a regra de
-   concorrência acima não se aplica lá dentro.
-5. **`Gerenciador de Sessão` não ganha lógica nova.** Se você está tentado a
-   adicionar um método na Sessão que faz mais que "ler/atualizar qual
-   projeto está ativo e despachar", esse método pertence ao módulo de
-   domínio dono da informação.
-6. **Nenhum módulo de domínio depende de detalhe de API do Tauri ou do
-   Angular para decidir algo.** A ponte `Commands`/`Events` é tratada como
-   substituível — se seu módulo importa algo de `tauri::` fora da camada de
-   IPC, isso é vazamento de responsabilidade.
+1. **Explicit constructor, no DI framework.**
+   `pub fn new(dep_a: Arc<DepA>, dep_b: Arc<DepB>) -> Self`. No
+   `#[derive(Inject)]`, service locator, or dynamic registration.
+2. **Prefer explicit and repetitive over "clever."** Heavy generics, macros,
+   excessive trait objects, elaborate lifetimes: only if both options solve
+   the same problem with the same clarity AND the simple version is
+   demonstrably too slow. When in doubt, write the boring version first.
+3. **Concurrency: the model simplest to reason about, not the theoretically
+   fastest.** A module's shared state sits behind a single
+   `Arc<Mutex<...>>` (or, at most, one `Mutex` per module — never one per
+   feature). `lock() → change what's needed → release the lock`. Only
+   consider channels, actors, or finer-grained locking if profiling shows
+   real contention — not before, not as speculative optimization. See the
+   [full design note](../../../docs/architecture.md#design-note-concurrency-model-for-shared-state).
+4. **The `cpal` real-time thread never touches this `Mutex`.** If the
+   module you're writing has any relationship to the audio callback, stop
+   and load the `realtime-audio-safety` skill — the concurrency rule above
+   doesn't apply in there.
+5. **`Session/State Manager` doesn't gain new logic.** If you're tempted to
+   add a method to the Session that does more than "read/update which
+   project is active and dispatch," that method belongs in the domain
+   module that owns that information.
+6. **No domain module depends on Tauri or Angular API details to decide
+   anything.** The `Commands`/`Events` bridge is treated as replaceable —
+   if your module imports something from `tauri::` outside the IPC layer,
+   that's a responsibility leak.
 
-## Antipadrões a evitar (motivo documentado, não gosto pessoal)
+## Antipatterns to avoid (documented reason, not personal taste)
 
-| Antipadrão | Por quê evitar aqui |
+| Antipattern | Why avoid it here |
 |---|---|
-| Trait object / `dyn Trait` para "flexibilidade futura" sem uso concreto hoje | Custo de leitura pra quem vem de TS sem ganho medido — YAGNI explícito no doc |
-| Canal (`mpsc`, actor) para estado compartilhado comum | Já decidido: `Mutex` simples é o padrão até profiling provar contenção real |
-| `Mutex` por feature/handler | Decidido: no máximo um por módulo, preferencialmente um só (`AppState`) |
-| Lock (`Mutex`, `RwLock`) acessado dentro do callback `cpal` | Viola a fronteira de tempo real — ver skill `realtime-audio-safety` |
-| Lógica de coordenação entre módulos dentro da Sessão | Vira *god object* — extraia pra um módulo novo dono dessa lógica |
+| A trait object / `dyn Trait` for "future flexibility" with no concrete use today | Reading cost for people coming from TS, with no measured gain — explicit YAGNI in the docs |
+| A channel (`mpsc`, actor) for common shared state | Already decided: a simple `Mutex` is the default until profiling proves real contention |
+| A `Mutex` per feature/handler | Decided: at most one per module, preferably a single one (`AppState`) |
+| A lock (`Mutex`, `RwLock`) accessed inside the `cpal` callback | Violates the real-time boundary — see the `realtime-audio-safety` skill |
+| Cross-module coordination logic inside the Session | Turns it into a *god object* — extract it into a new module that owns that logic |
 
-## Ao terminar
+## When you're done
 
-Rode `cargo check` (o hook `PostToolUse` já faz isso automaticamente a cada
-edição de `.rs` e devolve erro de compilação pra você corrigir sozinho — não
-espere o usuário pedir). Se o hook não disparar (sessão antiga, watcher não
-recarregado), rode manualmente antes de reportar a tarefa como concluída.
+Run `cargo check` (the `PostToolUse` hook already does this automatically on
+every `.rs` edit and hands you back the compiler error to fix yourself —
+don't wait for the user to ask). If the hook doesn't fire (an old session, a
+watcher that hasn't reloaded), run it manually before reporting the task as
+done.

@@ -1,15 +1,16 @@
 name: Build and publish dev image
 
-# Publica a imagem de desenvolvimento (distrobox/Containerfile) no GitHub
-# Container Registry (ghcr.io), pública -- para auditoria externa (projeto
-# open source) e para servir de ambiente reprodutível de longo prazo.
+# Publishes the development image (distrobox/Containerfile) to the GitHub
+# Container Registry (ghcr.io), publicly -- for external audit (this is an
+# open source project) and to serve as a long-term reproducible
+# environment.
 #
-# Gatilhos:
-# - push na main que mude o Containerfile ou este workflow;
-# - agendado semanalmente: o Arch é rolling release, então reconstruir toda
-#   semana traz atualizações de segurança dos pacotes do sistema sem
-#   depender de alguém lembrar de rebuildar manualmente;
-# - workflow_dispatch, para rebuild manual sob demanda.
+# Triggers:
+# - a push to main that changes the Containerfile or this workflow;
+# - a weekly schedule: Arch is a rolling release, so rebuilding every week
+#   brings system package security updates without depending on someone
+#   remembering to rebuild manually;
+# - workflow_dispatch, for an on-demand manual rebuild.
 on:
   push:
     branches: [main]
@@ -17,7 +18,7 @@ on:
       - "distrobox/Containerfile"
       - ".github/workflows/build-dev-image.yml"
   schedule:
-    - cron: "0 6 * * 1" # toda segunda-feira, 06:00 UTC
+    - cron: "0 6 * * 1" # every Monday, 06:00 UTC
   workflow_dispatch: {}
 
 env:
@@ -35,24 +36,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Instalar Podman
+      - name: Install Podman
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
 
-      - name: Normalizar nome do owner (minúsculas, exigido pelo GHCR)
+      - name: Normalize owner name (lowercase, required by GHCR)
         id: vars
         run: |
           echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
           echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
-      - name: Login no GHCR
+      - name: Log in to GHCR
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ${{ env.REGISTRY }} \
             --username "${{ github.actor }}" --password-stdin
 
-      - name: Build da imagem
+      - name: Build the image
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ steps.vars.outputs.owner }}/${{ env.IMAGE_NAME }}"
           podman build \
@@ -62,7 +63,7 @@ jobs:
             -t "$IMAGE:${{ steps.vars.outputs.date }}-${{ steps.vars.outputs.sha_short }}" \
             -f distrobox/Containerfile .
 
-      - name: Push da imagem
+      - name: Push the image
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ steps.vars.outputs.owner }}/${{ env.IMAGE_NAME }}"
           podman push "$IMAGE:latest"

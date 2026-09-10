@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """PreToolUse hook (matcher: Bash).
 
-Bloqueia dois padroes que violam regras documentadas em docs/doc.md:
+Blocks two patterns that violate rules documented in docs/architecture.md:
 
-1. `npm install/i/add <pacote>` com argumento posicional -- o projeto proibe
-   qualquer pacote npm de terceiros na camada Angular (ver
-   docs/doc.md#stack-e-plataforma). `npm install`/`npm ci` sem pacote
-   (lockfile ja existente) continuam liberados.
-2. `git commit` cuja mensagem nao siga Conventional Commits.
+1. `npm install/i/add <package>` with a positional argument -- the project
+   forbids any third-party npm package in the Angular layer (see
+   docs/architecture.md#stack-and-platform). `npm install`/`npm ci` with no
+   package (an existing lockfile) stay allowed.
+2. `git commit` whose message doesn't follow Conventional Commits.
 
-Saida: JSON com hookSpecificOutput.permissionDecision "deny" bloqueia a
-ferramenta antes de rodar; nenhuma saida (exit 0) libera.
+Output: JSON with hookSpecificOutput.permissionDecision "deny" blocks the
+tool before it runs; no output (exit 0) allows it.
 """
 import json
 import re
@@ -69,17 +69,18 @@ def main() -> int:
 
     if NPM_INSTALL_RE.search(cmd):
         return deny(
-            "Este projeto (Angular) nao usa nenhum pacote npm de terceiros "
-            "alem do que o proprio Angular ja traz -- ver "
-            "docs/doc.md#stack-e-plataforma. Se a instalacao for realmente "
-            "necessaria, confirme com o usuario antes (fora deste hook)."
+            "This project (Angular) doesn't use any third-party npm "
+            "package beyond what Angular itself already brings -- see "
+            "docs/architecture.md#stack-and-platform. If the install is "
+            "really necessary, confirm with the user first (outside this "
+            "hook)."
         )
 
     if "git commit" in cmd:
         msg = extract_commit_message(cmd)
         if msg and not CONVENTIONAL_RE.match(msg):
             return deny(
-                "Mensagem de commit nao segue Conventional Commits "
+                "Commit message doesn't follow Conventional Commits "
                 "(feat/fix/docs/style/refactor/perf/test/build/ci/chore/revert"
                 f'): "{msg}"'
             )

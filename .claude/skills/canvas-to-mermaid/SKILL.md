@@ -1,53 +1,55 @@
 ---
 name: canvas-to-mermaid
-description: Converte um arquivo Canvas do Obsidian (.canvas, um JSON) em documentação Markdown com diagramas Mermaid. Use quando o usuário pedir para documentar, converter ou "traduzir" um arquivo .canvas para Markdown/Mermaid, gerar docs a partir de um canvas de arquitetura, ou perguntar "como transformar meu canvas em documentação".
+description: Converts an Obsidian Canvas file (.canvas, JSON) into Markdown documentation with Mermaid diagrams. Use when the user asks to document, convert, or "translate" a .canvas file into Markdown/Mermaid, generate docs from an architecture canvas, or asks "how do I turn my canvas into documentation."
 ---
 
-# Canvas do Obsidian → Markdown + Mermaid
+# Obsidian Canvas → Markdown + Mermaid
 
-Processo **mecânico e determinístico** para transformar um arquivo `.canvas` (JSON do
-Obsidian) em um documento Markdown com diagramas Mermaid. Foi escrito para ser seguido
-passo a passo, sem exigir julgamento criativo — qualquer modelo, simples ou avançado,
-deve conseguir produzir o mesmo resultado seguindo as regras abaixo na ordem em que
-aparecem.
+A **mechanical, deterministic** process for turning a `.canvas` file
+(Obsidian's JSON format) into a Markdown document with Mermaid diagrams. It
+was written to be followed step by step, with no creative judgment required
+— any model, simple or advanced, should be able to produce the same result
+by following the rules below in the order they appear.
 
-Não pule etapas. Não invente conteúdo que não esteja no arquivo `.canvas`: o documento
-final deve ser rastreável 1:1 aos nós e arestas do canvas.
+Don't skip steps. Don't invent content that isn't in the `.canvas` file: the
+final document must be traceable 1:1 to the canvas's nodes and edges.
 
-## Use o script primeiro — não faça a parte mecânica de cabeça
+## Use the script first — don't do the mechanical part by hand
 
-Este diretório tem um conversor determinístico, `convert.py`, que já implementa os
-Passos 0–6 e a checklist do Passo 8 (containment geométrico, classificação de nós,
-geração de IDs/slugs, escaping, orientação do diagrama, tabelas). **Rode-o antes de
-tentar fazer qualquer parte disso por interpretação própria** — contas de geometria,
-escaping e unicidade de ID são exatamente o tipo de coisa que um modelo (simples ou
-não) erra por distração, e o script nunca erra isso.
+This directory has a deterministic converter, `convert.py`, which already
+implements Steps 0–6 and the Step 8 checklist (geometric containment, node
+classification, ID/slug generation, escaping, diagram orientation, tables).
+**Run it before trying to do any of this by interpretation** — geometry
+math, escaping, and ID uniqueness are exactly the kind of thing a model
+(simple or not) gets wrong by inattention, and the script never gets it
+wrong.
 
 ```bash
-python3 <diretório-desta-skill>/convert.py <entrada.canvas> [saida.md]
+python3 <this-skill's-directory>/convert.py <input.canvas> [output.md]
 ```
 
-- Requer só Python 3 (biblioteca padrão, sem dependências externas).
-- Se `saida.md` for omitido, o script grava ao lado do `.canvas` de entrada, mesmo nome
-  com extensão `.md`.
-- O script imprime no terminal um relatório: quantos grupos/nós/blocos descritivos e
-  quantas arestas foram traduzidas, mais avisos (`AVISO: ...`) para coisas que exigem
-  uma decisão sua — aresta apontando para um nó inexistente (provável erro no canvas
-  original: avise o usuário), grupo vazio, mais de um bloco descritivo. **Leia esse
-  relatório antes de considerar a tarefa concluída.**
-- O script **não** gera o Passo 7 (diagramas de sequência) — isso continua sendo
-  opcional e manual, só quando fizer sentido (ver abaixo).
-- Depois de rodar, abra o `.md` gerado e confira se o conteúdo faz sentido antes de
-  entregar. Se o script falhar (canvas em formato que ele não reconhece, erro de
-  parsing), só então recorra ao algoritmo manual descrito nos passos abaixo — eles
-  documentam exatamente a mesma lógica que o script implementa, para quando não há
-  como rodar código.
+- Requires only Python 3 (standard library, no external dependencies).
+- If `output.md` is omitted, the script writes next to the input `.canvas`,
+  same name with a `.md` extension.
+- The script prints a report to the terminal: how many groups/nodes/text
+  blocks and how many edges were translated, plus warnings (`WARNING: ...`)
+  for things that need a decision from you — an edge pointing at a
+  nonexistent node (likely an error in the original canvas: warn the user),
+  an empty group, more than one text block. **Read this report before
+  considering the task done.**
+- The script does **not** generate Step 7 (sequence diagrams) — that stays
+  optional and manual, only when it makes sense (see below).
+- After running it, open the generated `.md` and check that the content
+  makes sense before delivering it. If the script fails (a canvas format it
+  doesn't recognize, a parsing error), only then fall back to the manual
+  algorithm described in the steps below — they document exactly the same
+  logic the script implements, for when running code isn't an option.
 
-## Algoritmo manual (o que o script faz por baixo dos panos / fallback sem Python)
+## Manual algorithm (what the script does under the hood / fallback without Python)
 
-## Passo 0 — Ler o arquivo e entender o formato
+## Step 0 — Read the file and understand the format
 
-Um `.canvas` é um JSON puro com esta forma:
+A `.canvas` is plain JSON shaped like this:
 
 ```json
 {
@@ -56,209 +58,224 @@ Um `.canvas` é um JSON puro com esta forma:
 }
 ```
 
-### Tipos de `node`
+### `node` types
 
-| `type`   | Campos relevantes                          | Significado |
-|----------|---------------------------------------------|--------------|
-| `text`   | `text` (string Markdown)                    | Um bloco de texto solto no canvas. |
-| `group`  | `label` (string)                            | Um retângulo-container que agrupa outros nós visualmente. Não tem conteúdo próprio, só rótulo. |
-| `file`   | `file` (caminho relativo)                   | Referência a um arquivo embutido no vault. |
-| `link`   | `url` (string)                              | Referência a uma URL externa. |
+| `type`   | Relevant fields                              | Meaning |
+|----------|-----------------------------------------------|---------|
+| `text`   | `text` (Markdown string)                      | A loose block of text on the canvas. |
+| `group`  | `label` (string)                              | A container rectangle that visually groups other nodes. Has no content of its own, just a label. |
+| `file`   | `file` (relative path)                        | A reference to a file embedded in the vault. |
+| `link`   | `url` (string)                                | A reference to an external URL. |
 
-Todo node tem também: `id` (string única), `x`, `y`, `width`, `height` (números —
-posição e tamanho do retângulo no canvas), e opcionalmente `color`.
+Every node also has: `id` (unique string), `x`, `y`, `width`, `height`
+(numbers — position and size of the rectangle on the canvas), and optionally
+`color`.
 
-### Campos de `edge`
+### `edge` fields
 
 ```json
 { "id": "...", "fromNode": "<id>", "fromSide": "top|right|bottom|left",
-  "toNode": "<id>", "toSide": "top|right|bottom|left", "label": "opcional" }
+  "toNode": "<id>", "toSide": "top|right|bottom|left", "label": "optional" }
 ```
 
-`fromSide`/`toSide` só afetam onde a seta encosta visualmente no retângulo — **não
-alteram o sentido lógico da relação**. O sentido lógico é sempre `fromNode → toNode`.
+`fromSide`/`toSide` only affect where the arrow visually touches the
+rectangle — **they don't change the relationship's logical direction**. The
+logical direction is always `fromNode → toNode`.
 
-Leia o arquivo inteiro antes de prosseguir. Se for grande, ainda assim leia todo o
-JSON — a etapa seguinte depende de comparar todos os nós entre si.
+Read the whole file before moving on. If it's large, still read the entire
+JSON — the next step depends on comparing every node against every other
+one.
 
-## Passo 1 — Determinar quem pertence a qual grupo
+## Step 1 — Determine which group each node belongs to
 
-Grupos (`type: "group"`) são containers. Um nó pertence a um grupo se o retângulo do
-nó estiver **totalmente contido** no retângulo do grupo. Calcule assim, para cada par
-(grupo G, nó N) onde N não é o próprio G:
+Groups (`type: "group"`) are containers. A node belongs to a group if the
+node's rectangle is **fully contained** within the group's rectangle.
+Compute it like this, for each pair (group G, node N) where N isn't G
+itself:
 
 ```
-contido(N, G) =
+contained(N, G) =
     N.x            >= G.x
     AND N.x + N.width  <= G.x + G.width
     AND N.y            >= G.y
     AND N.y + N.height <= G.y + G.height
 ```
 
-Regras:
+Rules:
 
-- Se N está contido em mais de um grupo, ele pertence ao **menor** grupo (menor
-  `width * height`) — isso resolve grupos aninhados.
-- Um `group` pode estar contido em outro `group` (subgrupo). Trate isso como
-  aninhamento de `subgraph` no Mermaid (Passo 5).
-- Nós que não estão contidos em nenhum grupo são "avulsos" — ficam fora de qualquer
-  `subgraph` no diagrama, ou, se forem um bloco de texto longo (ver Passo 2), viram
-  texto introdutório do documento em vez de nó do diagrama.
+- If N is contained in more than one group, it belongs to the **smallest**
+  group (smallest `width * height`) — this resolves nested groups.
+- A `group` can be contained within another `group` (a subgroup). Treat this
+  as nested `subgraph`s in Mermaid (Step 5).
+- Nodes not contained in any group are "loose" — they stay outside any
+  `subgraph` in the diagram, or, if they're a long text block (see Step 2),
+  they become the document's introductory text instead of a diagram node.
 
-Ao final deste passo você deve ter uma lista: `grupo → [nós filhos]`, incluindo um
-grupo virtual "sem grupo" para os avulsos.
+By the end of this step you should have a list: `group → [child nodes]`,
+including a virtual "no group" bucket for the loose ones.
 
-## Passo 2 — Classificar cada `text` node: descrição ou componente?
+## Step 2 — Classify each `text` node: description or component?
 
-Nem todo nó de texto é uma caixa de diagrama. Aplique esta regra simples:
+Not every text node is a diagram box. Apply this simple rule:
 
-- **Bloco descritivo** (vira introdução em prosa, não caixa de diagrama) se o nó:
-  - não pertence a nenhum grupo, **e**
-  - o `text` tem mais de ~200 caracteres OU contém um cabeçalho Markdown (`#`).
-- **Componente** (vira caixa de diagrama) em todos os outros casos — geralmente uma
-  frase curta, 1–2 linhas, descrevendo uma peça do sistema.
+- **Descriptive block** (becomes prose introduction, not a diagram box) if
+  the node:
+  - doesn't belong to any group, **and**
+  - its `text` is longer than ~200 characters OR contains a Markdown
+    heading (`#`).
+- **Component** (becomes a diagram box) in every other case — usually a
+  short phrase, 1–2 lines, describing a piece of the system.
 
-Só deve existir, no máximo, um punhado de blocos descritivos por canvas (tipicamente
-um só: a visão geral do projeto). Se houver mais de um, coloque-os em ordem de
-aparição (topo-esquerda para baixo-direita, por `y` e depois `x`) na introdução do
-documento.
+There should only ever be a handful of descriptive blocks per canvas
+(typically just one: the project overview). If there's more than one, put
+them in order of appearance (top-left to bottom-right, by `y` then `x`) in
+the document's introduction.
 
-## Passo 3 — Montar as tabelas de componentes (uma por grupo)
+## Step 3 — Build the component tables (one per group)
 
-Para cada grupo de nível raiz, gere uma seção `## <label do grupo>` com uma tabela
-(grupos aninhados descem um nível de heading cada, `###`, `####`, ...):
+For each top-level group, generate a `## <group label>` section with a
+table (nested groups drop one heading level each, `###`, `####`, ...):
 
-| Componente | Descrição |
+| Component | Description |
 |---|---|
-| `<texto do node, primeira linha ou frase>` | `<texto completo do node>` |
+| `<node text, first line or sentence>` | `<full node text>` |
 
-Use o texto completo do `text` node como descrição — não resuma nem invente detalhes
-que não estão lá. Se o nó for `type: "file"` ou `type: "link"`, a "descrição" é a
-referência (`Arquivo: <file>` ou `Link: <url>`).
+Use the `text` node's full text as the description — don't summarize or
+invent details that aren't there. If the node is `type: "file"` or
+`type: "link"`, the "description" is the reference (`File: <file>` or
+`Link: <url>`).
 
-Isso garante que **todo** nó do canvas apareça em algum lugar do documento final —
-use essa lista como checklist de completude no Passo 8.
+This guarantees that **every** node in the canvas ends up somewhere in the
+final document — use this list as your completeness checklist in Step 8.
 
-## Passo 4 — Preparar os nós para o Mermaid
+## Step 4 — Prepare nodes for Mermaid
 
-Para cada nó que vai virar caixa de diagrama:
+For every node that becomes a diagram box:
 
-1. **ID do Mermaid = slug legível derivado do rótulo.** Gere um identificador curto em
-   MAIÚSCULAS/ASCII a partir das 1–3 primeiras palavras significativas do `text` (sem
-   acentos, espaços viram `_`) — ex.: "Gerenciador de Sessão / Estado" → `SESSAO`. Se o
-   slug colidir com outro já usado, acrescente um sufixo numérico (`_2`, `_3`, ...).
-   **Não use o `id` hexadecimal do canvas como ID do Mermaid**: além de deixar o código
-   do diagrama ilegível para quem for manter o documento depois, IDs de canvas do
-   Obsidian costumam começar com dígito (ex.: `0039b035...`), o que é inseguro em
-   alguns parsers Mermaid. A correspondência `id do canvas → slug` é só um rascunho
-   mental seu — não precisa aparecer no documento final.
-2. **Rótulo:** pegue a primeira frase/linha do `text` (até o primeiro `.` ou quebra de
-   linha, o que vier primeiro). Se o texto original tiver múltiplas linhas, junte-as
-   com `<br/>` dentro do rótulo em vez de quebra de linha real.
-3. **Escape:** troque aspas duplas `"` por `'` dentro do rótulo (o rótulo do nó em si
-   já vai entre aspas duplas no Mermaid: `ID["rótulo"]`).
-4. **Truncamento:** se o rótulo passar de ~60 caracteres, corte e use reticências no
-   diagrama — o texto completo já está preservado na tabela do Passo 3.
+1. **Mermaid ID = a readable slug derived from the label.** Generate a short
+   UPPERCASE/ASCII identifier from the first 1–3 meaningful words of the
+   `text` (no accents, spaces become `_`) — e.g., "Session/State Manager" →
+   `SESSION`. If the slug collides with one already in use, append a
+   numeric suffix (`_2`, `_3`, ...). **Don't use the canvas's hex `id` as
+   the Mermaid ID**: besides making the diagram's code unreadable for
+   whoever maintains the document later, Obsidian canvas IDs often start
+   with a digit (e.g., `0039b035...`), which is unsafe in some Mermaid
+   parsers. The `canvas id → slug` mapping is only your own mental scratch
+   pad — it doesn't need to appear in the final document.
+2. **Label:** take the first sentence/line of the `text` (up to the first
+   `.` or line break, whichever comes first). If the original text has
+   multiple lines, join them with `<br/>` inside the label instead of a real
+   line break.
+3. **Escaping:** replace double quotes `"` with `'` inside the label (the
+   node's label itself already goes between double quotes in Mermaid:
+   `ID["label"]`).
+4. **Truncation:** if the label goes over ~60 characters, cut it and use an
+   ellipsis in the diagram — the full text is already preserved in the
+   Step 3 table.
 
-## Passo 5 — Escrever o `flowchart`
+## Step 5 — Write the `flowchart`
 
-Monte um bloco assim, `flowchart LR` (esquerda→direita) ou `flowchart TD`
-(topo→baixo) — escolha `LR` se o canvas é mais largo que alto, `TD` caso contrário
-(compare a soma das larguras vs. alturas dos grupos):
+Assemble a block like this, `flowchart LR` (left→right) or `flowchart TD`
+(top→bottom) — choose `LR` if the canvas is wider than it is tall, `TD`
+otherwise (compare the sum of group widths vs. heights):
 
 ```mermaid
 flowchart LR
-    subgraph GRUPO_A_ID["Nome do Grupo A"]
-        NODE1["rótulo curto"]
-        NODE2["rótulo curto"]
+    subgraph GROUP_A_ID["Group A Name"]
+        NODE1["short label"]
+        NODE2["short label"]
     end
 
-    subgraph GRUPO_B_ID["Nome do Grupo B"]
-        NODE3["rótulo curto"]
+    subgraph GROUP_B_ID["Group B Name"]
+        NODE3["short label"]
     end
 
     NODE1 --> NODE2
-    NODE2 -- "rótulo da aresta" --> NODE3
+    NODE2 -- "edge label" --> NODE3
 ```
 
-Regras de tradução de `edge` → seta:
+`edge` → arrow translation rules:
 
-- Sem `label`: `FROM --> TO`
-- Com `label`: `FROM -- "label" --> TO`
-- Todo `subgraph ... end` deve estar balanceado — confira a contagem antes de
-  finalizar.
-- Nós avulsos (fora de grupo) ficam declarados fora de qualquer `subgraph`, no nível
-  raiz do flowchart.
-- Não reordene nem inverta arestas: a direção é sempre `fromNode → toNode`,
-  independente de `fromSide`/`toSide`.
+- No `label`: `FROM --> TO`
+- With `label`: `FROM -- "label" --> TO`
+- Every `subgraph ... end` must be balanced — double-check the count before
+  finishing.
+- Loose nodes (outside any group) are declared outside any `subgraph`, at
+  the flowchart's root level.
+- Don't reorder or reverse edges: the direction is always
+  `fromNode → toNode`, regardless of `fromSide`/`toSide`.
 
-## Passo 6 — Montar o documento final
+## Step 6 — Assemble the final document
 
-Estrutura fixa do arquivo `.md` de saída:
+Fixed structure of the output `.md` file:
 
 ```markdown
-# <Título>
+# <Title>
 
-<texto do(s) bloco(s) descritivo(s) do Passo 2, verbatim>
+<text of the descriptive block(s) from Step 2, verbatim>
 
-## Visão geral da arquitetura
+## Architecture overview
 
-<bloco mermaid do Passo 5>
+<mermaid block from Step 5>
 
-## <Nome do Grupo 1>
+## <Group 1 Name>
 
-<tabela do Passo 3>
+<table from Step 3>
 
-## <Nome do Grupo 2>
+## <Group 2 Name>
 
-<tabela do Passo 3>
+<table from Step 3>
 
 ...
 ```
 
-- `<Título>`: use o primeiro `#` encontrado dentro do bloco descritivo do Passo 2; se
-  não houver nenhum, use o nome do arquivo `.canvas` sem extensão.
-- **Não duplique o título:** se o bloco descritivo já começa com essa linha `# ...`,
-  remova essa primeira linha (e a linha em branco seguinte) do texto antes de colá-lo
-  como corpo — ela já virou o `<Título>` do documento.
-- Se não houver bloco descritivo nenhum, omita a introdução e comece direto pela
-  visão geral.
+- `<Title>`: use the first `#` found inside the Step 2 descriptive block; if
+  there isn't one, use the `.canvas` file's name without the extension.
+- **Don't duplicate the title:** if the descriptive block already starts
+  with that `# ...` line, strip that first line (and the following blank
+  line) from the text before pasting it as the body — it already became the
+  document's `<Title>`.
+- If there's no descriptive block at all, omit the introduction and start
+  directly with the overview.
 
-## Passo 7 (opcional, só com folga de contexto/capacidade) — Diagramas de fluxo
+## Step 7 (optional, only with room for extra context/capacity) — Flow diagrams
 
-Isto é **opcional** e exige mais julgamento — pule se estiver usando um modelo
-simples ou se o canvas não tiver cadeias claras de causa→efeito. Se for fazer:
+This is **optional** and requires more judgment — skip it if you're using a
+simple model or if the canvas has no clear cause→effect chains. If you do
+it:
 
-1. Procure cadeias de arestas conectadas (A→B→C→D) que atravessem múltiplos grupos —
-   isso geralmente representa um caso de uso ou fluxo de dados ponta a ponta.
-2. Para cada cadeia identificada, gere um `sequenceDiagram` do Mermaid com um
-   `participant` por nó envolvido (na ordem em que aparecem na cadeia) e uma seta
-   `A->>B: <label da aresta ou nome da ação>` por aresta da cadeia.
-3. Coloque esses diagramas em uma seção `## Fluxos principais` antes das tabelas de
-   componentes, ou depois — mantenha consistente.
+1. Look for chains of connected edges (A→B→C→D) that cross multiple groups —
+   this usually represents an end-to-end use case or data flow.
+2. For each chain found, generate a Mermaid `sequenceDiagram` with one
+   `participant` per node involved (in the order they appear in the chain)
+   and one `A->>B: <edge label or action name>` arrow per edge in the chain.
+3. Put these diagrams in a `## Main flows` section before the component
+   tables, or after them — keep it consistent.
 
-## Passo 8 — Checklist de validação antes de entregar
+## Step 8 — Validation checklist before delivering
 
-Antes de escrever o arquivo final, confira:
+Before writing the final file, check:
 
-- [ ] Todo `node` do JSON aparece em algum lugar do `.md` (como caixa do diagrama, ou
-      linha de tabela, ou parte da introdução). Nenhum nó foi silenciosamente
-      descartado.
-- [ ] Toda `edge` do JSON virou uma seta no flowchart (nenhuma sobrando).
-- [ ] Todo `subgraph` aberto tem um `end` correspondente.
-- [ ] Nenhum rótulo de nó/aresta contém aspas duplas não escapadas.
-- [ ] O texto da introdução é cópia literal do node descritivo, não um resumo.
+- [ ] Every `node` in the JSON appears somewhere in the `.md` (as a diagram
+      box, a table row, or part of the introduction). No node was silently
+      dropped.
+- [ ] Every `edge` in the JSON became an arrow in the flowchart (none left
+      over).
+- [ ] Every opened `subgraph` has a matching `end`.
+- [ ] No node/edge label contains unescaped double quotes.
+- [ ] The introduction's text is a literal copy of the descriptive node, not
+      a summary.
 
-## Exemplo mínimo (mapeamento passo a passo)
+## Minimal example (step-by-step mapping)
 
-Canvas de entrada:
+Input canvas:
 
 ```json
 {
   "nodes": [
     {"id":"g1","type":"group","x":0,"y":0,"width":300,"height":200,"label":"Backend"},
-    {"id":"n1","type":"text","x":20,"y":20,"width":150,"height":50,"text":"API REST"},
-    {"id":"n2","type":"text","x":400,"y":20,"width":150,"height":50,"text":"Banco de Dados"}
+    {"id":"n1","type":"text","x":20,"y":20,"width":150,"height":50,"text":"REST API"},
+    {"id":"n2","type":"text","x":400,"y":20,"width":150,"height":50,"text":"Database"}
   ],
   "edges": [
     {"id":"e1","fromNode":"n1","fromSide":"right","toNode":"n2","toSide":"left","label":"SQL"}
@@ -266,23 +283,24 @@ Canvas de entrada:
 }
 ```
 
-- Passo 1: `n1` está contido em `g1` (0≤20, 170≤300, 0≤20, 70≤200) → pertence a
-  "Backend". `n2` não está contido em `g1` (400 > 300) → avulso.
-- Passo 2: ambos os `text` são curtos → viram componentes, não introdução.
-- Passo 3/5 → resultado:
+- Step 1: `n1` is contained in `g1` (0≤20, 170≤300, 0≤20, 70≤200) →
+  belongs to "Backend." `n2` isn't contained in `g1` (400 > 300) → loose.
+- Step 2: both `text` nodes are short → they become components, not
+  introduction.
+- Step 3/5 → result:
 
 ```mermaid
 flowchart LR
     subgraph BACKEND["Backend"]
-        API_REST["API REST"]
+        REST_API["REST API"]
     end
-    BANCO_DADOS["Banco de Dados"]
+    DATABASE["Database"]
 
-    API_REST -- "SQL" --> BANCO_DADOS
+    REST_API -- "SQL" --> DATABASE
 ```
 
-(`g1`/`n1`/`n2` do JSON viraram os slugs `BACKEND`/`API_REST`/`BANCO_DADOS` — nunca os
-ids hexadecimais crus, ver Passo 4.)
+(`g1`/`n1`/`n2` from the JSON became the slugs `BACKEND`/`REST_API`/`DATABASE`
+— never the raw hex IDs, see Step 4.)
 
-Esse é o nível de literalidade esperado: nada é inferido além do que os campos do
-JSON já dizem.
+This is the level of literalness expected: nothing is inferred beyond what
+the JSON fields already say.

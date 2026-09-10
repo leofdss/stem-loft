@@ -1,77 +1,79 @@
 ---
 name: realtime-audio-safety
-description: Checklist de segurança para qualquer mudança que toque o Motor de Áudio ou o callback de tempo real do cpal no StemLoft — o que pode e não pode rodar dentro do callback, como crossfade/decodificação/volume-mute-solo são resolvidos fora dele. Use antes de editar qualquer código perto de cpal, decodificação, mixagem, ou do loop de reprodução.
+description: Safety checklist for any change touching the Audio Engine or the cpal real-time callback in StemLoft — what may and may not run inside the callback, how crossfade/decoding/volume-mute-solo are resolved outside it. Use before editing any code near cpal, decoding, mixing, or the playback loop.
 ---
 
-# Segurança da thread de tempo real (Motor de Áudio)
+# Real-time thread safety (Audio Engine)
 
-O callback de áudio do `cpal` roda em uma thread de tempo real: **nada que
-aloque, bloqueie em lock ou faça I/O pode rodar dentro dele** — um único
-underrun já é audível como glitch. Isso é uma restrição física, não uma
-preferência de estilo, e vale mesmo quando parecer conveniente violá-la "só
-essa vez". Fonte:
-[doc.md — Motor de Áudio e a thread de tempo real](../../../docs/doc.md#nota-de-design-motor-de-áudio-e-a-thread-de-tempo-real).
+The `cpal` audio callback runs on a real-time thread: **nothing that
+allocates, blocks on a lock, or does I/O may run inside it** — a single
+underrun is already audible as a glitch. This is a physical constraint, not
+a style preference, and it holds even when it seems convenient to violate it
+"just this once." Source:
+[architecture.md — Audio Engine and the real-time thread](../../../docs/architecture.md#design-note-audio-engine-and-the-real-time-thread).
 
-## A regra em uma frase
+## The rule in one sentence
 
-**Dentro do callback**: só leitura de buffers já prontos (ring buffer /
-double-buffer), mixagem por multiplicação/soma de amostras já decodificadas,
-e o crossfade do loop (que também é só matemática sobre amostras já
-decodificadas). Nada mais.
+**Inside the callback**: only reading from already-ready buffers (ring
+buffer / double-buffer), mixing by multiplying/adding already-decoded
+samples, and the loop's crossfade (which is also just math over already
+decoded samples). Nothing else.
 
-**Fora do callback, adiantado**: decodificação de arquivo, alocação de
-buffer, cálculo de waveform, qualquer I/O de disco.
+**Outside the callback, ahead of time**: file decoding, buffer allocation,
+waveform computation, any disk I/O.
 
-## Checklist antes de escrever código no `Motor de Áudio`
+## Checklist before writing code in the `Audio Engine`
 
-- [ ] **Isso lê ou escreve arquivo?** → tem que rodar fora do callback, numa
-      thread de decodificação, entregando pro callback via `rtrb` (SPSC,
-      wait-free) — nunca disco direto dentro do callback.
-- [ ] **Isso aloca (`Vec::new()`, `String::new()`, `Box::new()`, clone de
-      algo não trivial)?** → não pode estar no caminho do callback. Pré-aloque
-      fora e reuse.
-- [ ] **Isso faz `lock()` de um `Mutex`?** → não pode estar no callback. Volume,
-      mute, solo chegam via variável atômica ou double-buffer publicada pelo
-      handler de `Command` fora do callback — nunca via `Mutex` que o callback
-      possa ficar esperando. Ver
-      [nota de design do modelo de concorrência](../../../docs/doc.md#nota-de-design-modelo-de-concorrência-do-estado-compartilhado)
-      pra entender a fronteira entre os dois mecanismos (`Mutex` do estado
-      geral vs. atômicos do callback — são coisas diferentes, não confundir).
-- [ ] **É lógica de crossfade no limite do loop?** → precisa que o *início*
-      do loop (a partir de `startSec`) já esteja num buffer separado, pronto
-      *antes* do callback chegar no fim do loop — preparado fora do callback
-      assim que o loop é definido ou reiniciado. O callback só lê os dois
-      buffers (o que termina + o que começa) e mistura por multiplicação/soma.
-      Duração exata e curva (linear/equal-power) são detalhe de implementação
-      livre — não é decisão de arquitetura pendente. Ver
-      [nota de design completa](../../../docs/doc.md#nota-de-design-crossfade-no-limite-do-loop).
-- [ ] **Mexe em canais/formato de sample?** → todo buffer que chega ao
-      callback de mixagem já é estéreo (upmix mono→estéreo acontece na
-      importação, não no playback) e já foi validado como mesmo sample rate
-      entre todos os stems do projeto (rejeição na importação, sem resample
-      silencioso). O `Motor de Áudio` nunca precisa lidar com mono nem com
-      sample rate divergente — se seu código está tratando esses casos dentro
-      do motor, o bug está na importação, não aqui.
+- [ ] **Does this read or write a file?** → it has to run outside the
+      callback, on a decoding thread, delivering to the callback via `rtrb`
+      (SPSC, wait-free) — never disk directly inside the callback.
+- [ ] **Does this allocate (`Vec::new()`, `String::new()`, `Box::new()`, a
+      non-trivial clone)?** → it can't be on the callback's path.
+      Pre-allocate outside and reuse.
+- [ ] **Does this `lock()` a `Mutex`?** → it can't be in the callback.
+      Volume, mute, solo arrive via an atomic variable or a double-buffer
+      published by the `Command` handler outside the callback — never via a
+      `Mutex` the callback might have to wait on. See the
+      [concurrency model design note](../../../docs/architecture.md#design-note-concurrency-model-for-shared-state)
+      to understand the boundary between the two mechanisms (the general
+      state's `Mutex` vs. the callback's atomics — different things, don't
+      confuse them).
+- [ ] **Is this crossfade logic at the loop boundary?** → it needs the
+      *start* of the loop (from `startSec`) already in a separate buffer,
+      ready *before* the callback reaches the end of the loop — prepared
+      outside the callback as soon as the loop is set or restarted. The
+      callback only reads the two buffers (the one ending + the one
+      starting) and blends by multiplying/adding. Exact duration and curve
+      (linear/equal-power) are a free implementation detail — not a pending
+      architecture decision. See the
+      [full design note](../../../docs/architecture.md#design-note-crossfade-at-the-loop-boundary).
+- [ ] **Does this touch channels/sample format?** → every buffer that
+      reaches the mixing callback is already stereo (mono→stereo upmixing
+      happens at import time, not on playback) and has already been
+      validated as having the same sample rate across every stem in the
+      project (rejected at import, no silent resampling). `Audio Engine`
+      never needs to handle mono or a mismatched sample rate — if your code
+      is handling those cases inside the engine, the bug is in import, not
+      here.
 
-## Crates e por que elas foram escolhidas (não reabra a decisão)
+## Crates, and why they were chosen (don't reopen the decision)
 
-| Responsabilidade | Crate | Motivo (não reavaliar sem medir) |
+| Responsibility | Crate | Reason (don't re-evaluate without measuring) |
 |---|---|---|
-| Decodificação | `symphonia` | Puro Rust, sem dependência nativa — mesmo código nas 4 plataformas (Linux/Windows/macOS/Android) |
-| Buffer decodificação→callback | `rtrb` | SPSC wait-free, API estreita o suficiente pra não escorregar num uso que viole tempo real (`ringbuf` é mais genérico, não escolhido por isso) |
-| Saída de áudio | `cpal` | ALSA/WASAPI/CoreAudio/Oboe atrás da mesma API |
+| Decoding | `symphonia` | Pure Rust, no native dependency — same code on all 4 platforms (Linux/Windows/macOS/Android) |
+| Decode→callback buffer | `rtrb` | SPSC wait-free, an API narrow enough to not slip into a use that violates real-time constraints (`ringbuf` is more general-purpose, not chosen for that reason) |
+| Audio output | `cpal` | ALSA/WASAPI/CoreAudio/Oboe behind the same API |
 
-Ponto de atenção Android: o backend Oboe do `cpal` precisa do handle
-JVM/contexto que o Tauri mobile expõe — isso é wiring de inicialização, não
-lógica de domínio; não deixe esse detalhe vazar pra dentro do `Motor de
-Áudio` em si.
+Android point of attention: `cpal`'s Oboe backend needs the JVM
+handle/context that Tauri mobile exposes — this is initialization wiring,
+not domain logic; don't let this detail leak into the `Audio Engine` itself.
 
-## Se você não tem certeza se algo "conta" como código de tempo real
+## If you're not sure whether something "counts" as real-time code
 
-A separação é por **thread**, não por arquivo ou módulo — o `Motor de
-Áudio` tem código dos dois lados. Pergunte: "isso roda dentro da closure que
-o `cpal` chama a cada buffer de áudio, ou roda antes disso, preparando dado
-pra ela ler depois?". Se não souber, assuma que está dentro e aplique a
-restrição — o custo de errar pro lado seguro é só um pouco mais de buffer
-pré-calculado; o custo de errar pro outro lado é um glitch audível em
-produção.
+The separation is by **thread**, not by file or module — the `Audio
+Engine` has code on both sides. Ask: "does this run inside the closure
+`cpal` calls on every audio buffer, or does it run before that, preparing
+data for it to read later?" If you don't know, assume it's inside and apply
+the constraint — the cost of erring on the safe side is just a bit more
+pre-computed buffer; the cost of erring the other way is an audible glitch
+in production.

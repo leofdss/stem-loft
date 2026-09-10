@@ -1,90 +1,98 @@
-# TODO — Decisões pendentes antes da implementação
+# TODO — Pending decisions before implementation
 
-Decisões que o [`doc.md`](docs/doc.md) deixou em aberto de propósito: não são bugs de
-arquitetura, são escolhas de design/implementação que ainda faltam fixar antes de
-começar a codar. Marcar `[x]` conforme forem resolvidas (e refletir a decisão no
-`doc.md`, se ela afetar o comportamento documentado).
+Decisions that [`architecture.md`](docs/architecture.md) deliberately left open: these
+aren't architecture bugs, they're design/implementation choices that still need to be
+pinned down before coding starts. Check them off with `[x]` as they're resolved (and
+reflect the decision in `architecture.md` if it affects documented behavior).
 
-## Núcleo Rust
+## Rust core
 
-- [x] **Modelo de concorrência do estado compartilhado** — resolvido: o modelo **mais simples
-  de raciocinar**, não o mais sofisticado — `Arc<Mutex<AppState>>` (ou um `Mutex` por módulo, no
-  máximo), sem canais nem actor. Handler de `Command` faz lock, muda o que precisa, solta o
-  lock; a thread de tempo real do `cpal` nunca toca esse `Mutex` (só lê os atômicos/ring
-  buffers já preparados — regra que já existia). Justificativa: o alvo é uma pessoa clicando
-  botões, não um servidor concorrente — contenção de lock nesse volume não é um problema real.
-  Só considerar algo mais elaborado se profiling mostrar contenção de fato, não como
-  otimização especulativa antes de medir. Ver
-  [nota de design](docs/doc.md#nota-de-design-modelo-de-concorrência-do-estado-compartilhado).
-- [x] **Crates de áudio** — resolvido, priorizando funcionar em Linux/Windows/macOS/Android
-  com o menor atrito possível: `symphonia` pra decodificação (puro Rust, sem dependência nativa
-  — decodifica igual nas quatro plataformas), `rtrb` pro buffer entre decodificação e o callback
-  de tempo real (SPSC, wait-free — mais estreito e mais alinhado ao caso de uso que `ringbuf`),
-  `cpal` pra saída de áudio (já cobre as quatro plataformas, incluindo Android via Oboe). Ponto
-  de atenção pra implementação (não muda a escolha): o backend Oboe do `cpal` no Android precisa
-  do contexto/JVM que o Tauri mobile expõe — wiring a fazer na inicialização, não lógica de
-  domínio. Ver [nota de design](docs/doc.md#nota-de-design-crates-de-áudio-multiplataforma).
-- [x] **Comportamento no limite do loop** — resolvido: **crossfade curto** (alguns ms), não
-  corte seco. Consequência pro `Motor de Áudio`: o início do loop (a partir de `startSec`)
-  precisa estar pronto num buffer próprio *antes* do callback de tempo real chegar no fim do
-  loop, já que crossfade mistura o trecho que termina com o que começa — não dá pra decodificar
-  isso na hora dentro do callback. Duração exata do crossfade e curva (linear/equal-power) ficam
-  como detalhe de implementação. Ver
-  [nota de design](docs/doc.md#nota-de-design-crossfade-no-limite-do-loop).
-- [x] **Canais dos stems (mono/estéreo)** — resolvido: canal é sempre **estéreo** dentro do
-  projeto. Stem mono é upmixado (canal duplicado em L/R) por `Importador de Stems` na
-  importação, não a cada playback — ao contrário do sample rate, aqui não há rejeição, porque
-  duplicar mono em estéreo não tem ambiguidade de qualidade como o resampling teria. `Motor de
-  Áudio` nunca lida com buffer mono. Ver
-  [Consistência entre stems de um projeto](docs/doc.md#consistência-entre-stems-de-um-projeto).
+- [x] **Concurrency model for shared state** — resolved: the model that's **simplest
+  to reason about**, not the most sophisticated — `Arc<Mutex<AppState>>` (or at most
+  one `Mutex` per module), no channels, no actor. A `Command` handler locks, changes
+  what it needs, releases the lock; the `cpal` real-time thread never touches this
+  `Mutex` (it only reads the already-prepared atomics/ring buffers — a rule that
+  already existed). Rationale: the target is one person clicking buttons, not a
+  concurrent server — lock contention at this volume isn't a real problem. Only
+  consider something more elaborate if profiling shows actual contention, not as
+  speculative optimization. See
+  [design note](docs/architecture.md#design-note-concurrency-model-for-shared-state).
+- [x] **Audio crates** — resolved, prioritizing running on Linux/Windows/macOS/Android
+  with the least possible friction: `symphonia` for decoding (pure Rust, no native
+  dependency — decodes identically on all four platforms), `rtrb` for the buffer
+  between decoding and the real-time callback (SPSC, wait-free — narrower and better
+  aligned with the use case than `ringbuf`), `cpal` for audio output (already covers
+  all four platforms, including Android via Oboe). Implementation point of attention
+  (doesn't change the choice): `cpal`'s Oboe backend on Android needs the context/JVM
+  that Tauri mobile exposes — wiring to do at initialization, not domain logic. See
+  [design note](docs/architecture.md#design-note-audio-crates-cross-platform).
+- [x] **Behavior at the loop boundary** — resolved: a **short crossfade** (a few ms),
+  not a hard cut. Consequence for the `Audio Engine`: the start of the loop (from
+  `startSec`) needs to be ready in its own buffer *before* the real-time callback
+  reaches the end of the loop, since the crossfade blends the section ending with the
+  one starting — there's no decoding that on the fly inside the callback. Exact
+  crossfade duration and curve (linear/equal-power) remain an implementation detail.
+  See
+  [design note](docs/architecture.md#design-note-crossfade-at-the-loop-boundary).
+- [x] **Stem channels (mono/stereo)** — resolved: channels are always **stereo**
+  within the project. A mono stem is upmixed (channel duplicated to L/R) by `Stem
+  Importer` at import time, not on every playback — unlike sample rate, there's no
+  rejection here, because duplicating mono into stereo has no quality ambiguity the
+  way resampling would. `Audio Engine` never deals with mono buffers. See
+  [Consistency across a project's stems](docs/architecture.md#consistency-across-a-projects-stems).
 
-## Persistência
+## Persistence
 
-- [x] **Escrita atômica** — resolvido: **toda** escrita em disco de `Persistência de Projetos`
-  é atômica (write-to-temp-file + rename), sem exceção — não só o `.json` do projeto no
-  checkpoint com debounce, mas também o cache de waveform e, futuramente, o `.cho`. Ver
-  [nota de design](docs/doc.md#nota-de-design-quando-persistência-de-projetos-grava).
-- [x] **Cache da waveform** — resolvido: **cacheada em disco**, junto do projeto (campo
-  `stems[].waveformCache` no `.json`, escrito atomicamente igual a tudo mais) — não recalculada
-  a cada abertura do projeto. Motivo: performance em dispositivos fracos é requisito do projeto,
-  e decodificar o stem inteiro pra recalcular picos a cada abertura é justamente o tipo de custo
-  que isso evita. Cache é invalidado se o stem for reimportado/substituído. Ver
-  [nota de design](docs/doc.md#nota-de-design-cache-da-waveform-em-disco).
+- [x] **Atomic writes** — resolved: **every** disk write from `Project Persistence`
+  is atomic (write-to-temp-file + rename), no exceptions — not just the project's
+  `.json` at the debounced checkpoint, but also the waveform cache and, in the
+  future, the `.cho`. See
+  [design note](docs/architecture.md#design-note-when-project-persistence-writes).
+- [x] **Waveform cache** — resolved: **cached to disk**, alongside the project (the
+  `stems[].waveformCache` field in the `.json`, written atomically like everything
+  else) — not recalculated every time the project opens. Reason: performance on weak
+  devices is a project requirement, and decoding the whole stem to recompute peaks on
+  every open is exactly the kind of cost this avoids. The cache is invalidated if the
+  stem is re-imported/replaced. See
+  [design note](docs/architecture.md#design-note-waveform-cache-on-disk).
 
 ## IPC / Angular
 
-- [x] **Gerenciamento de estado no Angular** — resolvido: **Signals**, nativo do Angular — nada
-  de NgRx nem outro pacote externo (npm) além do que o próprio framework já traz, pra minimizar
-  superfície de ataque de supply chain (ver [Stack e plataforma](docs/doc.md#stack-e-plataforma)).
-  Como `Commands` se conectam aos componentes já estava decidido, com uma correção: a fila de
-  `Commands` vive no **núcleo Rust**, não no Angular — o Angular só apresenta o estado que o
-  Rust reporta e envia a intenção do usuário, sem fila/lógica própria (a mesma lógica de "toda
-  inteligência fica no Rust" usada pra minimizar custo de troca de framework no futuro). Efeito
-  pro usuário continua o mesmo: o controle que disparou o `Command` fica desabilitado até a
-  resposta (evita duplo clique), outros controles continuam livres para disparar seus próprios
-  `Commands`, que o núcleo processa em sequência. Ver
-  [nota de design](docs/doc.md#nota-de-design-fila-de-commands-no-núcleo-rust).
-- [x] **UX de erro** — resolvido: **modal**, não toast nem banner persistente, pra `audio_error`
-  e `score_parse_error`. O modal é só sobre apresentação — não pausa nem desfaz nada que já
-  estava rodando no núcleo; `score_parse_error` continua sem travar o resto do app (dispensa o
-  modal, `Visualização de Acordes/Tablatura` fica em estado de erro, resto da tela segue normal).
-  Ver [nota de design](docs/doc.md#nota-de-design-apresentação-de-erros-modal).
+- [x] **State management in Angular** — resolved: **Signals**, native to Angular —
+  no NgRx, no other external (npm) package beyond what the framework itself already
+  provides, to minimize supply-chain attack surface (see [Stack and platform](docs/architecture.md#stack-and-platform)).
+  How `Commands` connect to components was already decided, with one correction: the
+  `Commands` queue lives in the **Rust core**, not in Angular — Angular only presents
+  the state Rust reports and sends user intent, with no queue/logic of its own (the
+  same "all intelligence lives in Rust" reasoning used to minimize the cost of a
+  future framework swap). The effect for the user stays the same: the control that
+  fired a `Command` stays disabled until the response (preventing a double click),
+  other controls remain free to fire their own `Commands`, which the core processes
+  in sequence. See
+  [design note](docs/architecture.md#design-note-commands-queue-in-the-rust-core).
+- [x] **Error UX** — resolved: a **modal**, not a toast or persistent banner, for
+  `audio_error` and `score_parse_error`. The modal is only about presentation — it
+  doesn't pause or undo anything already running in the core; `score_parse_error`
+  still doesn't halt the rest of the app (dismiss the modal, `Chord/Tab View` sits in
+  an error state, the rest of the screen keeps working normally).
+  See [design note](docs/architecture.md#design-note-error-presentation-modal).
 
-## Escopo / setup
+## Scope / setup
 
-- [x] **Versão do Tauri** — resolvido: **Tauri v2**, e a política do projeto é manter Tauri e
-  Angular sempre na versão estável mais recente (não uma versão fixada de uma vez só) — reforça
-  o mesmo objetivo de minimizar superfície de ataque das outras decisões de Angular (nenhum
-  pacote de terceiros, Signals nativo). Ver [Stack e plataforma](docs/doc.md#stack-e-plataforma).
-  Consequência que fica valendo: o núcleo Rust não deve depender de detalhe de API de uma versão
-  específica do Tauri — a ponte `Commands`/`Events` é tratada como substituível, não como parte
-  fixa do design do núcleo (mesma separação que permitiria, no limite, trocar a própria camada
-  de apresentação, ex.: por Flutter).
-- [x] **Edição do `.cho` na v1** — resolvido: o app vai ler **e** atualizar o `.cho` conforme o
-  usuário edita acordes no frontend, mas essa edição não entra na v1 — a v1 é só leitura, igual
-  já documentado. A diferença é que "escrita" deixou de ser descartada como fora do escopo da
-  arquitetura pra sempre: é feature real planejada pra depois da v1 (ver
-  [Estado atual e trabalho futuro](docs/doc.md#estado-atual-e-trabalho-futuro)). Quando entrar,
-  o fluxo de escrita do `.cho` provavelmente reaproveita o padrão de escrita atômica
-  (write-to-temp-file + rename) já decidido em **Escrita atômica** acima, já que os dois casos
-  são "não corromper um arquivo de texto do projeto se o app crashar no meio da escrita".
+- [x] **Tauri version** — resolved: **Tauri v2**, and the project's policy is to
+  keep Tauri and Angular on the latest stable version at all times (not pinned once
+  and left alone) — reinforcing the same attack-surface-minimization goal as the
+  other Angular decisions (no third-party packages, native Signals). See [Stack and platform](docs/architecture.md#stack-and-platform).
+  Consequence that still holds: the Rust core must not depend on API details of a
+  specific Tauri version — the `Commands`/`Events` bridge is treated as replaceable,
+  not as a fixed part of the core's design (the same separation that would, in the
+  limit, allow swapping the presentation layer itself, e.g. for Flutter).
+- [x] **Editing the `.cho` in v1** — resolved: the app will both read **and** update
+  the `.cho` as the user edits chords in the frontend, but that editing isn't part of
+  v1 — v1 is read-only, as already documented. The difference is that "writing" is no
+  longer dismissed as forever out of the architecture's scope: it's a real feature
+  planned for after v1 (see
+  [Current status and future work](docs/architecture.md#current-status-and-future-work)). When it
+  lands, the `.cho` write flow will likely reuse the atomic-write pattern
+  (write-to-temp-file + rename) already decided in **Atomic writes** above, since both
+  cases boil down to "don't corrupt a project text file if the app crashes mid-write."

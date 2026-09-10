@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Conversor determinístico de Obsidian Canvas (.canvas) para Markdown + Mermaid.
+"""Deterministic converter from Obsidian Canvas (.canvas) to Markdown + Mermaid.
 
-Existe para que a parte mecânica do processo descrito em SKILL.md (containment
-geométrico, geração de IDs, escaping, orientação do diagrama, checklist de
-completude) não dependa da interpretação de um modelo de linguagem — só a
-escrita de prosa livre (introdução adicional, diagramas de sequência do
-Passo 7 opcional) fica a cargo do modelo.
+Exists so that the mechanical part of the process described in SKILL.md
+(geometric containment, ID generation, escaping, diagram orientation,
+completeness checklist) doesn't depend on a language model's interpretation
+— only free-form prose (an extra introduction, the optional Step 7 sequence
+diagrams) is left to the model.
 
-Uso:
-    python3 convert.py <entrada.canvas> [saida.md]
+Usage:
+    python3 convert.py <input.canvas> [output.md]
 
-Sem dependências externas — só biblioteca padrão do Python 3.
+No external dependencies — only the Python 3 standard library.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Tipos do formato .canvas
+# .canvas format types
 # ---------------------------------------------------------------------------
 
 
@@ -59,7 +59,7 @@ class CanvasFile:
 
 
 # ---------------------------------------------------------------------------
-# Passo 0 — leitura
+# Step 0 — reading
 # ---------------------------------------------------------------------------
 
 
@@ -67,7 +67,7 @@ def read_canvas(path: str) -> CanvasFile:
     raw = Path(path).read_text(encoding="utf-8")
     parsed = json.loads(raw)
     if not isinstance(parsed.get("nodes"), list) or not isinstance(parsed.get("edges"), list):
-        raise ValueError("Arquivo .canvas inválido: esperava { nodes: [...], edges: [...] }")
+        raise ValueError("Invalid .canvas file: expected { nodes: [...], edges: [...] }")
 
     nodes = [
         CanvasNode(
@@ -101,7 +101,7 @@ def read_canvas(path: str) -> CanvasFile:
 
 
 # ---------------------------------------------------------------------------
-# Passo 1 — containment geométrico (quem pertence a qual grupo)
+# Step 1 — geometric containment (who belongs to which group)
 # ---------------------------------------------------------------------------
 
 
@@ -131,7 +131,7 @@ def area(r: Rect) -> float:
 
 
 def build_parent_map(nodes: list[CanvasNode]) -> dict[str, str]:
-    """Mapa id -> id do grupo pai mais interno (ausente se avulso/top-level)."""
+    """Map of id -> innermost parent group id (absent if loose/top-level)."""
     groups = [n for n in nodes if n.type == "group"]
     parent: dict[str, str] = {}
 
@@ -153,7 +153,7 @@ def build_parent_map(nodes: list[CanvasNode]) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Passo 2 — classificar text node: bloco descritivo vs. componente
+# Step 2 — classify text node: descriptive block vs. component
 # ---------------------------------------------------------------------------
 
 
@@ -165,12 +165,12 @@ def is_descriptive_block(n: CanvasNode, has_parent: bool) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Passo 4 — slug de ID e rótulo do Mermaid
+# Step 4 — Mermaid ID slug and label
 # ---------------------------------------------------------------------------
 
 STOPWORDS = {
-    "de", "da", "do", "das", "dos", "e", "a", "o", "as", "os",
-    "em", "para", "com", "no", "na", "nos", "nas", "um", "uma",
+    "of", "the", "a", "an", "and", "or", "in", "on", "for", "with",
+    "to", "from", "at", "by", "as",
 }
 
 
@@ -204,14 +204,14 @@ def node_source_text(n: CanvasNode) -> str:
     if n.type == "text":
         return n.text or ""
     if n.type == "file":
-        return f"Arquivo: {n.file or ''}"
+        return f"File: {n.file or ''}"
     if n.type == "link":
         return f"Link: {n.url or ''}"
     return n.label or ""
 
 
 def first_sentence_plain(text: str) -> str:
-    """Primeira frase/linha do texto, sem nenhum escaping — uso em Markdown puro (tabelas)."""
+    """First sentence/line of the text, with no escaping — for use in plain Markdown (tables)."""
     lines = [l for l in re.split(r"\r?\n", text) if l.strip()]
     if len(lines) <= 1:
         single_line = lines[0] if lines else text
@@ -221,13 +221,14 @@ def first_sentence_plain(text: str) -> str:
 
 
 def short_label(text: str) -> str:
-    """Passo 4.2/4.3: mesma extração acima, mas com `<br/>` entre linhas e aspas/ângulos
-    escapados — só para uso dentro de rótulos Mermaid (que passam por um renderer HTML
-    internamente; um `<`/`>` cru pode ser interpretado como início de tag)."""
+    """Step 4.2/4.3: same extraction as above, but with `<br/>` between lines and
+    quotes/angle brackets escaped — only for use inside Mermaid labels (which pass
+    through an internal HTML renderer; a raw `<`/`>` could be read as the start of a
+    tag)."""
     lines = [l for l in re.split(r"\r?\n", text) if l.strip()]
     if len(lines) <= 1:
         return escape_mermaid_label(first_sentence_plain(text))
-    # Escapa cada linha individualmente para não escapar o próprio `<br/>` de junção.
+    # Escape each line individually so the joining `<br/>` itself isn't escaped.
     return "<br/>".join(escape_mermaid_label(l) for l in lines)
 
 
@@ -236,14 +237,14 @@ def escape_mermaid_label(s: str) -> str:
 
 
 def truncate_label(label: str, max_len: int = 60) -> str:
-    """Passo 4.4: trunca rótulos longos — nunca quebra artificialmente com `<br/>`."""
+    """Step 4.4: truncates long labels — never breaks artificially with `<br/>`."""
     if "<br/>" in label or len(label) <= max_len:
         return label
     return label[: max_len - 1].rstrip() + "…"
 
 
 # ---------------------------------------------------------------------------
-# Passo 5 — montagem do flowchart
+# Step 5 — assembling the flowchart
 # ---------------------------------------------------------------------------
 
 
@@ -314,7 +315,7 @@ def render_flowchart(
         from_slug = slug_of.get(e.fromNode)
         to_slug = slug_of.get(e.toNode)
         if not from_slug or not to_slug:
-            continue  # aresta órfã — já reportada como warning
+            continue  # orphaned edge — already reported as a warning
         if e.label:
             lines.append(f'    {from_slug} -- "{escape_mermaid_label(e.label)}" --> {to_slug}')
         else:
@@ -324,7 +325,7 @@ def render_flowchart(
 
 
 # ---------------------------------------------------------------------------
-# Passo 3/6 — tabelas de componentes por grupo
+# Steps 3/6 — component tables per group
 # ---------------------------------------------------------------------------
 
 
@@ -346,9 +347,9 @@ def render_tables(tree: Tree, nodes_by_id: dict[str, CanvasNode], min_heading: i
                 short = first_sentence_plain(node_source_text(child))
                 rows.append(f"| {short} | {full} |")
 
-        section = f"{heading} {g.label or '(sem nome)'}\n"
+        section = f"{heading} {g.label or '(unnamed)'}\n"
         if rows:
-            section += "\n| Componente | Descrição |\n|---|---|\n" + "\n".join(rows) + "\n"
+            section += "\n| Component | Description |\n|---|---|\n" + "\n".join(rows) + "\n"
         sections.append(section)
 
         for sub in subgroups:
@@ -358,7 +359,7 @@ def render_tables(tree: Tree, nodes_by_id: dict[str, CanvasNode], min_heading: i
         if nodes_by_id[node_id].type == "group":
             render_group(node_id, 0)
 
-    # Nós avulsos (fora de qualquer grupo) que não sejam bloco descritivo.
+    # Loose nodes (outside any group) that aren't a descriptive block.
     loose_rows: list[str] = []
     for node_id in tree.top_level:
         n = nodes_by_id[node_id]
@@ -370,7 +371,7 @@ def render_tables(tree: Tree, nodes_by_id: dict[str, CanvasNode], min_heading: i
     if loose_rows:
         heading = "#" * min(min_heading, 6)
         sections.append(
-            f"{heading} Componentes avulsos\n\n| Componente | Descrição |\n|---|---|\n"
+            f"{heading} Loose components\n\n| Component | Description |\n|---|---|\n"
             + "\n".join(loose_rows)
             + "\n"
         )
@@ -379,7 +380,7 @@ def render_tables(tree: Tree, nodes_by_id: dict[str, CanvasNode], min_heading: i
 
 
 # ---------------------------------------------------------------------------
-# Introdução / título (Passo 6)
+# Introduction / title (Step 6)
 # ---------------------------------------------------------------------------
 
 
@@ -410,7 +411,7 @@ def extract_title_and_body(descriptive_texts: list[str], canvas_path: str) -> tu
 def main() -> int:
     argv = sys.argv[1:]
     if not argv:
-        print("Uso: python3 convert.py <entrada.canvas> [saida.md]", file=sys.stderr)
+        print("Usage: python3 convert.py <input.canvas> [output.md]", file=sys.stderr)
         return 1
 
     input_path = argv[0]
@@ -437,7 +438,7 @@ def main() -> int:
     used_slugs: set[str] = set()
     for n in canvas.nodes:
         if n.type == "group":
-            slug_of[n.id] = slugify(n.label or "GRUPO", used_slugs)
+            slug_of[n.id] = slugify(n.label or "GROUP", used_slugs)
         elif n.id in diagram_node_ids:
             slug_of[n.id] = slugify(node_source_text(n), used_slugs)
 
@@ -458,40 +459,40 @@ def main() -> int:
     parts = [f"# {title}"]
     if body.strip():
         parts.append(body.strip())
-    parts.append(f"## Visão geral da arquitetura\n\n```mermaid\n{flowchart}\n```")
+    parts.append(f"## Architecture overview\n\n```mermaid\n{flowchart}\n```")
     parts.append(tables.strip())
 
     markdown = "\n\n".join(p for p in parts if p) + "\n"
     Path(output_path).write_text(markdown, encoding="utf-8")
 
-    # ---- Relatório / checklist (Passo 8) — para o modelo revisar, nunca para o .md ----
+    # ---- Report / checklist (Step 8) — for the model to review, never for the .md ----
     orphan_edges = [e for e in canvas.edges if e.fromNode not in nodes_by_id or e.toNode not in nodes_by_id]
     group_count = sum(1 for n in canvas.nodes if n.type == "group")
 
-    print(f"Escrito em: {output_path}")
-    print(f"Orientação escolhida: {orientation}")
-    print(f"Grupos: {group_count}")
-    print(f"Nós de diagrama: {len(diagram_node_ids)}")
-    print(f"Blocos descritivos: {len(descriptive_ids)}")
-    print(f"Arestas traduzidas: {len(canvas.edges) - len(orphan_edges)}/{len(canvas.edges)}")
+    print(f"Written to: {output_path}")
+    print(f"Orientation chosen: {orientation}")
+    print(f"Groups: {group_count}")
+    print(f"Diagram nodes: {len(diagram_node_ids)}")
+    print(f"Descriptive blocks: {len(descriptive_ids)}")
+    print(f"Edges translated: {len(canvas.edges) - len(orphan_edges)}/{len(canvas.edges)}")
     if orphan_edges:
         ids = ", ".join(e.id for e in orphan_edges)
         print(
-            f"AVISO: {len(orphan_edges)} aresta(s) referenciam nó inexistente e foram ignoradas: {ids}",
+            f"WARNING: {len(orphan_edges)} edge(s) reference a nonexistent node and were skipped: {ids}",
             file=sys.stderr,
         )
     if len(descriptive_ids) > 1:
         print(
-            f"AVISO: mais de um bloco descritivo encontrado ({len(descriptive_ids)}) — "
-            "todos foram concatenados em ordem de posição.",
+            f"WARNING: more than one descriptive block found ({len(descriptive_ids)}) — "
+            "all of them were concatenated in position order.",
             file=sys.stderr,
         )
     for n in canvas.nodes:
         if n.type == "group" and not tree.children_of.get(n.id):
-            print(f'AVISO: grupo "{n.label}" está vazio.', file=sys.stderr)
+            print(f'WARNING: group "{n.label}" is empty.', file=sys.stderr)
     print(
-        "\nO Passo 7 (diagramas de sequência) NÃO foi gerado por este script — é opcional "
-        "e requer julgamento; adicione manualmente só se fizer sentido."
+        "\nStep 7 (sequence diagrams) was NOT generated by this script — it's optional "
+        "and requires judgment; add it manually only if it makes sense."
     )
     return 0
 

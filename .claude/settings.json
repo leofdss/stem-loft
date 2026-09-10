@@ -7,8 +7,13 @@
           {
             "type": "command",
             "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/cargo_check_on_rust_edit.py\" ]; then python3 \"$root/.claude/hooks/cargo_check_on_rust_edit.py\"; fi",
-            "statusMessage": "Rodando cargo check...",
+            "statusMessage": "Running cargo check...",
             "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/readme_sync_reminder.py\" ]; then python3 \"$root/.claude/hooks/readme_sync_reminder.py\"; fi",
+            "statusMessage": "Checking README is still in sync..."
           }
         ]
       }
@@ -20,7 +25,7 @@
           {
             "type": "command",
             "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/bash_guard.py\" ]; then python3 \"$root/.claude/hooks/bash_guard.py\"; fi",
-            "statusMessage": "Verificando regras do projeto..."
+            "statusMessage": "Checking project rules..."
           }
         ]
       }
