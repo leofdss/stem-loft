@@ -7,6 +7,40 @@ check`/`clippy`/`test`/`build` for the Rust core, `npm run build` for the
 Angular UI — to it, while the Tauri window itself (and audio playback, which
 needs local ALSA/PipeWire) keeps running on your own machine.
 
+## Day-to-day flow
+
+Nothing changes about how you edit code — you still work on the files
+locally, in your own editor. What this adds is a second, separate track for
+a different moment of the loop:
+
+| | Runs where | What it's for | How |
+|---|---|---|---|
+| **Actually running the app** (window, audio) | Local | Seeing/hearing what you built | `cargo tauri dev`, same as always |
+| **Just checking it compiles / tests pass** | Remote host | Fast feedback, no local CPU spent | `distrobox/remote/check.sh` |
+
+`cargo tauri dev` has to stay local — it opens a window on your screen and
+plays audio through your sound card, neither of which the remote host has
+access to. But most of the time you're not testing the window or the audio,
+you're asking "does this compile? did I break a test?" — that's pure CPU,
+no GUI needed, and that's the part this hands off to the remote host's
+cores instead of your own machine's.
+
+A typical loop:
+
+1. Edit code locally, as usual.
+2. Before firing up the real app, run `distrobox/remote/check.sh`. It
+   pushes your working tree to the remote host and runs `cargo
+   check`/`clippy`/`test` plus `npm run build` there — a wrong type or a
+   broken test shows up in well under a minute, without your machine
+   compiling `webkit2gtk` locally just to find out.
+3. Once that's clean (or whenever you want to actually see the change),
+   enter the local container and run `cargo tauri dev` like before.
+
+To skip the "did I remember to sync" step, leave a terminal running
+`distrobox/remote/sync.sh --watch` in the background — it keeps pushing
+your edits every 2s, so `distrobox/remote/run.sh --dir src-tauri cargo
+check` is always checking current code.
+
 ## Why this exists
 
 Compiling `src-tauri` pulls in `webkit2gtk`, `tao`, `muda`, `soup3` and the
