@@ -56,12 +56,26 @@ its own logic. Details and rationale in
 - **Rust** — the core: audio engine (`symphonia`, `rtrb`, `cpal`), state, persistence, and the `.cho` (extended ChordPro) parser.
 - **Angular** — presentation only, native Signals for state, no third-party packages.
 
+### Dev environment
+
+The repo ships a reproducible Arch Linux dev container (Distrobox/Podman)
+with Rust, Node, Python, Claude Code, and the Tauri build dependencies
+already installed. With Distrobox and Podman on the host:
+
+```bash
+distrobox assemble create --file distrobox/distrobox.ini
+distrobox enter stemloft
+```
+
+Details and the reasoning behind the image in
+[`distrobox/README.md`](distrobox/README.md).
+
 ### Docs
 
 - [`docs/architecture.md`](docs/architecture.md) — full architecture: components, IPC contract, the `.cho` format, data flows.
 - [`docs/project-name.md`](docs/project-name.md) — why the project is called StemLoft.
 - [`TODO.md`](TODO.md) — pending decisions and what's left before implementation.
-- [`distrobox/README.md`](distrobox/README.md) — reproducible Arch Linux dev environment (Distrobox/Podman), with Rust, Node, Python, and Claude Code preinstalled.
+- [`distrobox/README.md`](distrobox/README.md) — reproducible Arch Linux dev environment (Distrobox/Podman): what's in the image (`Containerfile`) and how the container is created from it (`distrobox.ini`).
 
 ### Contributing
 
