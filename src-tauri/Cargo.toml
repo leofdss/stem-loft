@@ -1,0 +1,43 @@
+[package]
+name = "stemloft"
+version = "0.1.0"
+description = "StemLoft desktop app -- Rust core (Tauri v2)"
+edition = "2021"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/leofdss/stem-loft"
+# Not published to crates.io -- this is the app itself, not a library others
+# would depend on.
+publish = false
+
+# Tauri v2's mobile targets need the app's logic in a library crate (`run()`
+# in lib.rs), with a thin main.rs binary calling into it -- see lib.rs.
+[lib]
+name = "stemloft_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Audio Engine crates -- chosen for least friction across all four target
+# platforms (Linux/Windows/macOS/Android), see
+# docs/architecture.md#design-note-audio-crates-cross-platform. Not wired
+# into any code yet (Audio Engine is still a scaffold) -- declared here so
+# `cargo check`/`cargo build` already proves the whole toolchain (including
+# system ALSA on Linux) links cleanly in this dev environment.
+symphonia = { version = "0.6", default-features = false, features = ["wav", "pcm"] }
+rtrb = "0.4"
+cpal = "0.18"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
