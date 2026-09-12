@@ -87,8 +87,9 @@ formalize:
    host, from a synced copy of this repo — creates the same `stemloft`
    container documented in `distrobox/README.md`, just on that machine.
 3. `cp distrobox/remote/host.local.example distrobox/remote/host.local` and
-   set `STEMLOFT_REMOTE_HOST` to `user@host` (gitignored — this is
-   per-developer, not shared).
+   set `STEMLOFT_REMOTE_HOST` (`user@host`) and `STEMLOFT_REMOTE_PATH` (where
+   the project lives on that host, e.g. `~/Projects/stem-loft`) — gitignored,
+   this is per-developer, not shared.
 
 ## Usage
 

@@ -15,6 +15,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 [[ -f "$DIR/host.local" ]] && source "$DIR/host.local"
 : "${STEMLOFT_REMOTE_HOST:?Set STEMLOFT_REMOTE_HOST (see distrobox/remote/host.local.example)}"
+: "${STEMLOFT_REMOTE_PATH:?Set STEMLOFT_REMOTE_PATH (see distrobox/remote/host.local.example)}"
 
 PROJECT_DIR="."
 if [[ "${1:-}" == "--dir" ]]; then
@@ -28,5 +29,6 @@ if [[ $# -eq 0 ]]; then
 fi
 
 printf -v CMD_QUOTED '%q ' "$@"
+REMOTE_PATH="${STEMLOFT_REMOTE_PATH%/}"
 ssh "$STEMLOFT_REMOTE_HOST" \
-  "distrobox enter stemloft -- bash -lc 'cd ~/Projects/stem-loft/$PROJECT_DIR && $CMD_QUOTED'"
+  "distrobox enter stemloft -- bash -lc 'cd $REMOTE_PATH/$PROJECT_DIR && $CMD_QUOTED'"

@@ -11,8 +11,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 [[ -f "$DIR/host.local" ]] && source "$DIR/host.local"
 : "${STEMLOFT_REMOTE_HOST:?Set STEMLOFT_REMOTE_HOST (see distrobox/remote/host.local.example)}"
+: "${STEMLOFT_REMOTE_PATH:?Set STEMLOFT_REMOTE_PATH (see distrobox/remote/host.local.example)}"
 
-REMOTE_PATH=~/Projects/stem-loft/
+REMOTE_PATH="${STEMLOFT_REMOTE_PATH%/}/"
 LOCAL_PATH="$(cd "$DIR/../.." && pwd)/"
 
 do_sync() {
