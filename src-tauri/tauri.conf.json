@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "io.github.leofdss.stemloft",
   "build": {
-    "beforeDevCommand": "npm --prefix ../ui start -- --port 4200",
-    "beforeBuildCommand": "npm --prefix ../ui run build",
+    "beforeDevCommand": "CI=true npm --prefix ../ui start -- --port 4200",
+    "beforeBuildCommand": "CI=true npm --prefix ../ui run build",
     "devUrl": "http://localhost:4200",
     "frontendDist": "../ui/dist/stemloft/browser"
   },
