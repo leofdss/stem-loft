@@ -1,0 +1,18 @@
+.import-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.selected {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+}
+
+.status {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}

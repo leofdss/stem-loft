@@ -1,4 +1,30 @@
-# Development image (Distrobox)
+# Development environment (Distrobox)
+
+This folder holds the two pieces of StemLoft's dev environment: the
+`Containerfile` (what's *inside* the image) and `distrobox.ini` (how the
+container is *created* from it).
+
+## Quick start
+
+Requires [Distrobox](https://distrobox.it/) and Podman on the host. From
+the repository root:
+
+```bash
+distrobox assemble create --file distrobox/distrobox.ini
+distrobox enter stemloft
+```
+
+The first command pulls the published image and creates the `stemloft`
+container; it's safe to re-run — if the container already exists it says so
+and does nothing. To recreate it from scratch (to pick up a newer image,
+for example), add `--replace`; only the container is discarded, since all
+the work lives in the host's `HOME`, which is shared.
+
+Inside the container, the repository is at the same path as on the host,
+and `git`, `claude`, and `code` are ready to use with the host's own
+credentials.
+
+## The image
 
 The `Containerfile` in this folder defines StemLoft's development image:
 Arch Linux (`quay.io/toolbx/arch-toolbox`, maintained by the Toolbx
@@ -81,21 +107,77 @@ podman run --rm -it stemloft-dev bash -lc \
 
 ## Publishing (GitHub Actions)
 
-The workflow builds and publishes to `ghcr.io/<owner>/stemloft-dev` on every
+The workflow builds and publishes to `ghcr.io/leofdss/stemloft-dev` on every
 push that changes the `Containerfile`, weekly (Mondays, 06:00 UTC), and on
-demand (`workflow_dispatch`). It only runs once this repository exists on
-GitHub and the push actually lands there — today the project is still local
-only.
+demand (`workflow_dispatch`). It has already run: the image is published and
+publicly pullable, tagged `latest` plus a dated `YYYYMMDD-<short sha>` tag
+per build (useful to pin a specific build in `distrobox.ini` when needed).
 
-**One-time manual step, on the first publish:** packages on GHCR are born
-private by default, even in a public repository. After the first published
-build, go to the `stemloft-dev` package's *Package settings* (at
-`github.com/<owner>/stemloft-dev/pkgs/container/stemloft-dev`, the
-*Package settings* tab) and switch visibility to *Public* — only needed
-once.
+Packages on GHCR are born private by default, even in a public repository —
+that visibility switch was a one-time manual step on the first publish (the
+`stemloft-dev` package's *Package settings* tab, at
+`github.com/leofdss/stem-loft/pkgs/container/stemloft-dev`) and is already
+done. It only comes back if the package is ever deleted and republished.
 
-## Next step
+## The container (`distrobox.ini`)
 
-This `Containerfile` only solves the **image**. Configuring Distrobox
-itself (the `assemble` file, extra mounts, container name) is the next
-step, once the image is published.
+`distrobox.ini` is a [`distrobox assemble`](https://distrobox.it/usage/distrobox-assemble/)
+manifest: it declares the container in the repo instead of leaving it to a
+long `distrobox create` line typed by hand, so the environment is
+reviewable in a diff and identical for everyone who runs the command — the
+same reasoning behind publishing the image.
+
+Relevant decisions in it:
+
+- **Container name: `stemloft`** (the section header), so the command to
+  get in is `distrobox enter stemloft`.
+- **`pull=true`.** Always checks the registry for a newer `latest` when
+  creating the container — otherwise recreating it would silently reuse a
+  months-old local copy and defeat the weekly rebuild.
+- **`init=false`** (no systemd). Nothing in here is a service, and
+  `--init` makes Distrobox *skip* mounting the host's `XDG_RUNTIME_DIR` —
+  which is exactly where the Wayland, PipeWire, and PulseAudio sockets the
+  Tauri WebView and the audio engine need live.
+- **`entry=false`.** No `.desktop` entry in the host's application menu:
+  this is a development container entered from a terminal, not an app. A
+  GUI app that *should* appear in the host menu can be exported per user,
+  from inside the container, with `distrobox-export --app code`.
+- **`nvidia=false`.** StemLoft is an audio app — the WebView renders
+  through the regular GTK/WebKit stack and nothing in the core needs the
+  GPU. Worth revisiting only if automatic stem separation ever runs
+  locally instead of through an external API.
+- **No extra volumes, deliberately.** Distrobox already mounts, with no
+  configuration: the host's `HOME` (so the repository, `~/.gitconfig`, and
+  `~/.claude` are the same files inside and out — the sharing the
+  `Containerfile` relies on), `/dev` and `/sys` (so `/dev/snd` reaches
+  ALSA/cpal) along with the host's supplementary groups (`audio`,
+  `video`, …), the `XDG_RUNTIME_DIR` sockets, and the whole host
+  filesystem under `/run/host` for anything outside `HOME` (stems on
+  another mount point, say). A `volume=` line is only needed for a path
+  that must appear at the *same* path inside the container as on the host.
+- **No `additional_packages`.** Every tool belongs in the
+  `Containerfile`, where it's part of the published, auditable image.
+  Installing from the manifest instead would make each developer's
+  container quietly different from the image everyone else pulls.
+
+To check what the manifest expands to without creating anything:
+
+```bash
+distrobox assemble create --dry-run --file distrobox/distrobox.ini
+```
+
+## Running a container off a locally built image
+
+`distrobox.ini` points at the published `ghcr.io/leofdss/stemloft-dev:latest`.
+To run the container off a local build instead — to test a `Containerfile`
+change before pushing it — build it as in
+[Building and testing locally](#building-and-testing-locally), then edit the
+manifest to use that image and skip the registry:
+
+```ini
+image=localhost/stemloft-dev:latest
+pull=false
+```
+
+Create it with `--replace` to swap an existing `stemloft` container for one
+built on the local image, and revert those two lines before committing.

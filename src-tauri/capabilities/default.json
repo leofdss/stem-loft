@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window -- grants it the default core permissions (event listen/emit, window info) plus invoking this app's own Commands.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

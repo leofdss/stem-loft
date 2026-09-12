@@ -1,0 +1,20 @@
+<section class="import-screen">
+  <h2>Import stems</h2>
+  <input type="file" multiple (change)="onFilesSelected($event)" />
+
+  @if (selectedNames().length > 0) {
+    <ul class="selected">
+      @for (name of selectedNames(); track name) {
+        <li>{{ name }}</li>
+      }
+    </ul>
+  }
+
+  <button type="button" [disabled]="pending() || selectedNames().length === 0" (click)="onImport()">
+    Import
+  </button>
+
+  @if (lastError(); as error) {
+    <p class="status">{{ error }}</p>
+  }
+</section>

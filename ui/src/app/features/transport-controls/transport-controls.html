@@ -1,0 +1,15 @@
+<section class="transport">
+  <button type="button" [disabled]="playPending()" (click)="onPlay()">
+    Play
+  </button>
+  <button type="button" [disabled]="pausePending()" (click)="onPause()">
+    Pause
+  </button>
+  <button type="button" [disabled]="stopPending()" (click)="onStop()">
+    Stop
+  </button>
+
+  @if (lastError(); as error) {
+    <p class="status">{{ error }}</p>
+  }
+</section>
