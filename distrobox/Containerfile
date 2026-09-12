@@ -60,6 +60,13 @@ RUN pacman -Syu --noconfirm --needed \
     patchelf \
     # Audio output (cpal/ALSA) used by the Audio Engine at build time
     alsa-lib \
+    # Interactive shell -- Distrobox sets the container user's login shell
+    # to match the host's when the container is created, so this makes fish
+    # available for hosts that use it, with starship as its prompt. Config
+    # (fish's, starship.toml) lives in the shared HOME, nothing to set up
+    # here.
+    fish \
+    starship \
     # sudo already ships in the Toolbx base image, but it's the mechanism
     # Distrobox uses to grant the host user privileges inside the
     # container -- kept explicit here so this doesn't depend on the base

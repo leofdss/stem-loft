@@ -29,7 +29,8 @@ credentials.
 The `Containerfile` in this folder defines StemLoft's development image:
 Arch Linux (`quay.io/toolbx/arch-toolbox`, maintained by the Toolbx
 project — Distrobox's sibling, same family of tools) with Python,
-Node.js + fnm, Rust, git, Claude Code, and VS Code.
+Node.js + fnm, Rust, git, Claude Code, VS Code, and fish/starship for an
+interactive shell.
 
 Target runtime: **Podman**. Publishing: **GitHub Container Registry (ghcr.io)**,
 public, built via GitHub Actions (`.github/workflows/build-dev-image.yml`).
