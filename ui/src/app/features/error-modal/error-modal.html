@@ -1,0 +1,9 @@
+@if (current(); as error) {
+  <div class="overlay" role="presentation">
+    <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="error-modal-title">
+      <h2 id="error-modal-title">{{ error.title }}</h2>
+      <p>{{ error.message }}</p>
+      <button type="button" (click)="dismiss()">Dismiss</button>
+    </div>
+  </div>
+}

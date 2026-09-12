@@ -1,0 +1,12 @@
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.status {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
