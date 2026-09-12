@@ -1,0 +1,3 @@
+# Copy this file to host.local (gitignored) and point it at your own
+# always-on machine. See distrobox/remote/README.md.
+export STEMLOFT_REMOTE_HOST=user@your-remote-host
