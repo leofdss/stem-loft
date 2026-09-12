@@ -3,11 +3,12 @@
 A practice tool for musicians, built around looping a section of a song and
 mixing its stems while you play along.
 
-> 🚧 **Under active development — not usable yet.** There's no working
-> build: this repository currently holds the architecture, the Claude Code
-> agents/skills that guide implementation, and a reproducible dev
-> environment, but no app code yet. See [TODO.md](TODO.md) for what's left
-> before implementation starts.
+> 🚧 **Under active development — not usable yet.** The Tauri v2 + Angular
+> scaffold is in place (`src-tauri/`, `ui/`) — it builds and the two layers
+> are wired together — but every domain module in the Rust core is still a
+> stub (`import_stems`, `play`, `set_markers`, and the rest return "not yet
+> implemented"). See [TODO.md](TODO.md) for what's left before the app does
+> anything real.
 
 ## For musicians (once it's usable)
 
@@ -37,9 +38,10 @@ None of this is usable yet — see the status callout above.
 ### What is this
 
 Desktop app built on **Tauri v2**: a **Rust** core (audio, state,
-persistence) embedded with an **Angular** presentation layer running inside
-Tauri's WebView. See [`docs/architecture.md`](docs/architecture.md) for the
-full design — components, data flow, and the reasoning behind each decision.
+persistence) in [`src-tauri/`](src-tauri), embedded with an **Angular**
+presentation layer in [`ui/`](ui) running inside Tauri's WebView. See
+[`docs/architecture.md`](docs/architecture.md) for the full design —
+components, data flow, and the reasoning behind each decision.
 
 ### Why
 
@@ -68,7 +70,19 @@ distrobox enter stemloft
 ```
 
 Details and the reasoning behind the image in
-[`distrobox/README.md`](distrobox/README.md).
+[`distrobox/README.md`](distrobox/README.md). Once inside the container,
+from the repo root:
+
+```bash
+cargo tauri dev
+```
+
+(the Tauri CLI is installed as a `cargo` binary, not an npm package — see
+[`docs/architecture.md#stack-and-platform`](docs/architecture.md#stack-and-platform)
+for why the Angular side avoids npm dependencies beyond what Angular itself
+brings). This starts the Angular dev server and opens the app's window —
+today, the empty-state screens the scaffold ships with, since none of the
+Rust core's domain logic is implemented yet.
 
 ### Docs
 
