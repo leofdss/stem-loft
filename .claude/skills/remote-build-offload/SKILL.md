@@ -49,8 +49,10 @@ means offload is simply not set up here, not that something is broken.
 | `cargo check` | `cargo tauri dev` (opens a window) |
 | `cargo clippy --all-targets` | anything playing or recording audio |
 | `cargo test` | anything the user needs to see or hear |
+| `cargo llvm-cov` (coverage report) | |
 | `cargo build` | |
 | `npm run build` (Angular) | |
+| `npm run test -- --watch=false` (Angular, coverage on by default) | |
 
 The rule: if it's pure compilation/verification with no GUI and no audio
 device, it's safe to offload. If it needs a screen or a sound card, it has
@@ -66,7 +68,9 @@ With `REMOTE_AVAILABLE=1` from Step 1:
 distrobox/remote/run.sh --dir src-tauri cargo check
 distrobox/remote/run.sh --dir src-tauri cargo clippy --all-targets
 distrobox/remote/run.sh --dir src-tauri cargo test
+distrobox/remote/run.sh --dir src-tauri cargo llvm-cov --summary-only
 distrobox/remote/run.sh --dir ui npm run build
+distrobox/remote/run.sh --dir ui npm run test -- --watch=false
 
 # Or the whole verification pass in one call (syncs first, then runs all four):
 distrobox/remote/check.sh

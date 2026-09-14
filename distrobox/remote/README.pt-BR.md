@@ -7,10 +7,10 @@
 Opcional: se você tem uma segunda máquina Linux mais rápida e sempre ligada
 na mesma rede Tailscale/LAN, com [Distrobox](https://distrobox.it/) e Podman
 instalados, você pode transferir para ela as partes do loop de
-desenvolvimento que consomem CPU — `cargo check`/`clippy`/`test`/`build`
-para o núcleo em Rust, `npm run build` para a UI em Angular — enquanto a
-própria janela do Tauri (e a reprodução de áudio, que precisa de
-ALSA/PipeWire local) continua rodando na sua própria máquina.
+desenvolvimento que consomem CPU — `cargo check`/`clippy`/`test`/`build`/
+`llvm-cov` para o núcleo em Rust, `npm run build`/`test` para a UI em
+Angular — enquanto a própria janela do Tauri (e a reprodução de áudio, que
+precisa de ALSA/PipeWire local) continua rodando na sua própria máquina.
 
 ## Fluxo do dia a dia
 
@@ -35,9 +35,9 @@ Um loop típico:
 1. Edite código localmente, como de costume.
 2. Antes de subir o app de verdade, rode `distrobox/remote/check.sh`. Ele
    envia sua árvore de trabalho para o host remoto e roda `cargo
-   check`/`clippy`/`test` mais `npm run build` lá — um tipo errado ou um
-   teste quebrado aparece em bem menos de um minuto, sem sua máquina
-   compilar `webkit2gtk` localmente só para descobrir isso.
+   check`/`clippy`/`test` mais `npm run build`/`test` lá — um tipo errado ou
+   um teste quebrado (Rust ou Angular) aparece em bem menos de um minuto,
+   sem sua máquina compilar `webkit2gtk` localmente só para descobrir isso.
 3. Quando estiver tudo limpo (ou sempre que quiser realmente ver a
    mudança), entre no container local e rode `cargo tauri dev` como antes.
 
@@ -107,9 +107,12 @@ distrobox/remote/sync.sh --watch      # continua enviando a cada 2s enquanto voc
 
 distrobox/remote/run.sh --dir src-tauri cargo check
 distrobox/remote/run.sh --dir src-tauri cargo clippy --all-targets
+distrobox/remote/run.sh --dir src-tauri cargo test
+distrobox/remote/run.sh --dir src-tauri cargo llvm-cov --summary-only
 distrobox/remote/run.sh --dir ui npm run build
+distrobox/remote/run.sh --dir ui npm run test -- --watch=false
 
-distrobox/remote/check.sh             # sync + check + clippy + test + build, tudo de uma vez
+distrobox/remote/check.sh             # sync + check + clippy + test + build + testes do Angular, tudo de uma vez
 ```
 
 `sync.sh` exclui `.git`, `target/`, `node_modules/`, `dist/`, `.angular/`

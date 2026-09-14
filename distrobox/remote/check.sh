@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-shot remote validation pass: sync the working tree to the remote build
-# host, then run the Rust core's check/clippy/test and the Angular UI's build
-# on its CPU instead of the local machine's.
+# host, then run the Rust core's check/clippy/test and the Angular UI's
+# build + test suite on its CPU instead of the local machine's.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,5 +15,6 @@ echo "== src-tauri: cargo check + clippy + test =="
 "$DIR/run.sh" --dir src-tauri cargo test
 
 echo
-echo "== ui: npm build =="
+echo "== ui: npm build + test (coverage) =="
 "$DIR/run.sh" --dir ui npm run build
+"$DIR/run.sh" --dir ui npm run test -- --watch=false

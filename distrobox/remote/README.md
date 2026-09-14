@@ -7,9 +7,10 @@
 Optional: if you have a second, faster always-on Linux machine on the same
 Tailscale/LAN network, with [Distrobox](https://distrobox.it/) and Podman
 installed, you can offload the CPU-heavy parts of the dev loop — `cargo
-check`/`clippy`/`test`/`build` for the Rust core, `npm run build` for the
-Angular UI — to it, while the Tauri window itself (and audio playback, which
-needs local ALSA/PipeWire) keeps running on your own machine.
+check`/`clippy`/`test`/`build`/`llvm-cov` for the Rust core, `npm run
+build`/`test` for the Angular UI — to it, while the Tauri window itself
+(and audio playback, which needs local ALSA/PipeWire) keeps running on your
+own machine.
 
 ## Day-to-day flow
 
@@ -34,9 +35,9 @@ A typical loop:
 1. Edit code locally, as usual.
 2. Before firing up the real app, run `distrobox/remote/check.sh`. It
    pushes your working tree to the remote host and runs `cargo
-   check`/`clippy`/`test` plus `npm run build` there — a wrong type or a
-   broken test shows up in well under a minute, without your machine
-   compiling `webkit2gtk` locally just to find out.
+   check`/`clippy`/`test` plus `npm run build`/`test` there — a wrong type
+   or a broken test (Rust or Angular) shows up in well under a minute,
+   without your machine compiling `webkit2gtk` locally just to find out.
 3. Once that's clean (or whenever you want to actually see the change),
    enter the local container and run `cargo tauri dev` like before.
 
@@ -103,9 +104,12 @@ distrobox/remote/sync.sh --watch      # keep pushing every 2s while you edit
 
 distrobox/remote/run.sh --dir src-tauri cargo check
 distrobox/remote/run.sh --dir src-tauri cargo clippy --all-targets
+distrobox/remote/run.sh --dir src-tauri cargo test
+distrobox/remote/run.sh --dir src-tauri cargo llvm-cov --summary-only
 distrobox/remote/run.sh --dir ui npm run build
+distrobox/remote/run.sh --dir ui npm run test -- --watch=false
 
-distrobox/remote/check.sh             # sync + check + clippy + test + build, all in one
+distrobox/remote/check.sh             # sync + check + clippy + test + build + Angular tests, all in one
 ```
 
 `sync.sh` excludes `.git`, `target/`, `node_modules/`, `dist/`, `.angular/`

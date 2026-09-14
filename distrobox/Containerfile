@@ -60,6 +60,12 @@ RUN pacman -Syu --noconfirm --needed \
     patchelf \
     # Audio output (cpal/ALSA) used by the Audio Engine at build time
     alsa-lib \
+    # LLVM tools for cargo-llvm-cov (below) -- this project uses Arch's
+    # system `rust` package instead of rustup, so cargo-llvm-cov can't rely
+    # on `rustup component add llvm-tools-preview` the way its own docs
+    # usually assume; the `llvm` package provides the same `llvm-cov`/
+    # `llvm-profdata` binaries system-wide instead.
+    llvm \
     # Interactive shell -- Distrobox sets the container user's login shell
     # to match the host's when the container is created, so this makes fish
     # available for hosts that use it, with starship as its prompt. Config
@@ -78,6 +84,18 @@ RUN pacman -Syu --noconfirm --needed \
     nss \
  && pacman -Scc --noconfirm \
  && rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/*
+
+# cargo-llvm-cov -- source-based coverage for the Rust core's test suite
+# (docs/architecture.md's testing policy: the test suite is the source of
+# truth during evolution, so coverage has to be measurable). Not in the
+# official Arch repos, so built from crates.io like any other cargo
+# subcommand; uses the `llvm` package above instead of the
+# `rustup component add llvm-tools-preview` its own docs usually assume,
+# since this project deliberately doesn't use rustup (see the `rust`
+# package note above). NOT build-tested at the time this was added --
+# if `cargo llvm-cov` can't find compatible llvm-cov/llvm-profdata
+# binaries, see https://github.com/taiki-e/cargo-llvm-cov#installation.
+RUN cargo install cargo-llvm-cov
 
 # Claude Code (CLI) -- no official package in the Arch repos. Installed via
 # npm global as root, so it lands in /usr/lib/node_modules and
