@@ -40,6 +40,11 @@
             "type": "command",
             "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/npm_deps_check.py\" ]; then python3 \"$root/.claude/hooks/npm_deps_check.py\"; fi",
             "statusMessage": "Checking npm dependency baseline..."
+          },
+          {
+            "type": "command",
+            "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/prettier_check_on_edit.py\" ]; then python3 \"$root/.claude/hooks/prettier_check_on_edit.py\"; fi",
+            "statusMessage": "Checking Prettier formatting..."
           }
         ]
       }

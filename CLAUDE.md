@@ -84,6 +84,13 @@ after the matching change: `rust-core-reviewer` after anything under
   baseline. Covers the gap `bash_guard.py` can't: a dependency added by
   hand-editing `package.json` and then running a bare `npm install`/`npm
   ci` (no positional package, which `bash_guard.py` allows).
+- `prettier_check_on_edit.py` — runs `prettier --check` after every
+  `.ts`/`.html`/`.css`/`.scss` edit under `ui/` and hands back which file
+  isn't formatted per `ui/.prettierrc`. Report-only, never rewrites the
+  file itself. `ng lint` isn't wired up the same way: this project has no
+  lint builder configured, and adding one (`ng add angular-eslint`) means a
+  new npm dependency — ask the user before doing that, don't add it
+  unilaterally.
 
 None of the hooks above block anything — they're all `PostToolUse`
 feedback, same convention as `cargo_check_on_rust_edit.py`: the write
