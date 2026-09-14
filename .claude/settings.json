@@ -19,6 +19,11 @@
             "type": "command",
             "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/pt_br_sync_reminder.py\" ]; then python3 \"$root/.claude/hooks/pt_br_sync_reminder.py\"; fi",
             "statusMessage": "Checking pt-BR sibling is still in sync..."
+          },
+          {
+            "type": "command",
+            "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/kanban_sync_reminder.py\" ]; then python3 \"$root/.claude/hooks/kanban_sync_reminder.py\"; fi",
+            "statusMessage": "Checking kanban board is still in sync..."
           }
         ]
       }

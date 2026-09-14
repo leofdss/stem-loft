@@ -92,7 +92,10 @@ Rust core's domain logic is implemented yet.
 
 - [`docs/architecture.md`](docs/architecture.md) — full architecture: components, IPC contract, the `.cho` format, data flows.
 - [`docs/project-name.md`](docs/project-name.md) — why the project is called StemLoft.
-- [`TODO.md`](TODO.md) — pending decisions and what's left before implementation.
+- [`TODO.md`](TODO.md) — v1 implementation task board (Backlog/In
+  Progress/Review/Done, acceptance criteria, branch per task); regenerate a
+  Mermaid Kanban view of it with
+  [`scripts/todo_to_kanban.py`](scripts/todo_to_kanban.py).
 - [`distrobox/README.md`](distrobox/README.md) — reproducible Arch Linux dev environment (Distrobox/Podman): what's in the image (`Containerfile`) and how the container is created from it (`distrobox.ini`).
 
 ### Contributing

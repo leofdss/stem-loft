@@ -57,6 +57,12 @@ after the matching change: `rust-core-reviewer` after anything under
   `.claude/agents/`/`.claude/skills/`.
 - `pt_br_sync_reminder.py` — nudges you to update the counterpart file
   whenever you edit one half of a `foo.md`/`foo.pt-BR.md` pair (see below).
+- `kanban_sync_reminder.py` — nudges you to run `python3
+  scripts/todo_to_kanban.py --html` whenever you edit `TODO.md` or
+  `TODO.pt-BR.md`. That script is the only thing that should ever write
+  `docs/kanban.html` — it's a pure function of the two TODO files, so
+  running it is always correct regardless of who runs it; never hand-edit
+  `docs/kanban.html` directly.
 
 ## Docs are bilingual, tooling isn't
 

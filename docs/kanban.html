@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StemLoft Kanban</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f3ee;
+    --surface: #ffffff;
+    --surface-alt: #ece9e1;
+    --border: #dcd7cc;
+    --text: #201f1c;
+    --muted: #6b6659;
+    --accent: #2f6e68;
+    --warn: #b6772e;
+    --info: #3b6fa0;
+    --done: #3f8f5f;
+    --shadow: 0 1px 2px rgba(32, 31, 28, 0.06), 0 6px 16px rgba(32, 31, 28, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a;
+      --surface: #1b1f23;
+      --surface-alt: #20252b;
+      --border: #2b3137;
+      --text: #e9e6df;
+      --muted: #9b978e;
+      --accent: #5fc2b9;
+      --warn: #e2a25a;
+      --info: #85b1de;
+      --done: #7fd39a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding-inline: 20px;
+  }
+  main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding-block: 40px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  code { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  header.page {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 20px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+  .titleblock { max-width: 62ch; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 8px;
+  }
+  h1 {
+    margin: 0 0 8px;
+    font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.15rem);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  p.lede {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.98rem;
+    line-height: 1.55;
+  }
+  p.lede code { color: var(--text); background: var(--surface-alt); padding: 0.05em 0.4em; border-radius: 4px; font-size: 0.88em; }
+
+  .lang-toggle {
+    display: inline-flex;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .lang-toggle button {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    padding: 7px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .lang-toggle button:hover { color: var(--text); }
+  .lang-toggle button[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow);
+  }
+  .lang-toggle button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--stat-color, var(--border));
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    box-shadow: var(--shadow);
+  }
+  .stat .n {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .stat .label { font-size: 0.8rem; color: var(--muted); }
+  .stat.backlog { --stat-color: var(--muted); }
+  .stat.progress { --stat-color: var(--warn); }
+  .stat.review { --stat-color: var(--info); }
+  .stat.done { --stat-color: var(--done); }
+
+  .board-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .board-panel .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-alt);
+  }
+  .panel-head .file { font-family: "IBM Plex Mono", monospace; font-size: 0.82rem; color: var(--muted); }
+  .panel-head .file strong { color: var(--text); font-weight: 600; }
+  .panel-head .cmd-hint { font-size: 0.78rem; color: var(--muted); }
+  .board-scroll { overflow-x: auto; padding: 22px 20px 26px; min-height: 120px; }
+  .board-scroll svg { max-width: none !important; }
+  #board-pt-wrap[hidden], #board-en-wrap[hidden] { display: none; }
+  .loading { color: var(--muted); font-size: 0.9rem; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 0 20px 20px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .legend .dot.backlog { background: var(--muted); }
+  .legend .dot.progress { background: var(--warn); }
+  .legend .dot.review { background: var(--info); }
+  .legend .dot.done { background: var(--done); }
+
+  footer.notes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-top: 1px solid var(--border);
+    padding-top: 18px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  footer.notes .cmd {
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    color: var(--text);
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  footer.notes .col { max-width: 46ch; }
+  footer.notes .col b { color: var(--text); }
+
+  @media (max-width: 620px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    header.page { align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="page">
+    <div class="titleblock">
+      <p class="eyebrow">TODO.md &rarr; Mermaid kanban</p>
+      <h1>StemLoft implementation board</h1>
+      <p class="lede">
+        Generated by <code>scripts/todo_to_kanban.py --html</code> from the
+        current <code>##</code>/<code>###</code> structure of
+        <code>TODO.md</code> and <code>TODO.pt-BR.md</code> -- this file is
+        a pure function of those two, never hand-edited. Open it straight
+        from disk, no server needed.
+      </p>
+    </div>
+    <div class="lang-toggle" role="group" aria-label="Board language">
+      <button type="button" id="btn-en" aria-pressed="true">EN &middot; TODO.md</button>
+      <button type="button" id="btn-pt" aria-pressed="false">PT-BR &middot; TODO.pt-BR.md</button>
+    </div>
+  </header>
+
+  <section class="stats" aria-label="Task counts per column">
+    <div class="stat backlog"><span class="n">19</span><span class="label">Backlog</span></div>
+    <div class="stat progress"><span class="n">0</span><span class="label">In Progress</span></div>
+    <div class="stat review"><span class="n">0</span><span class="label">Review</span></div>
+    <div class="stat done"><span class="n">0</span><span class="label">Done</span></div>
+  </section>
+
+  <section class="board-panel">
+    <div class="panel-head">
+      <span class="file">Source: <strong id="source-file">TODO.md</strong></span>
+      <span class="cmd-hint">19 tasks, TASK-001 – TASK-019</span>
+    </div>
+    <div class="board-scroll">
+      <p class="loading" id="loading-note">Rendering board&hellip;</p>
+      <div id="board-en-wrap">
+        <pre class="mermaid" id="board-en">kanban
+  Backlog["Backlog"]
+    TASK_001["TASK-001 — Session/State Manager &amp; AppState wiring (feat/session-app-state)"]
+    TASK_002["TASK-002 — Project Persistence: load/save, atomic writes, schemaVersion (feat/project-persistence)"]
+    TASK_003["TASK-003 — Stem Importer: manual import, validation, mono upmix (feat/stem-importer)"]
+    TASK_004["TASK-004 — Loop &amp; Marker Manager (feat/loop-marker-manager)"]
+    TASK_005["TASK-005 — Audio Engine: cpal output + symphonia decode + rtrb pipeline (feat/audio-engine-playback)"]
+    TASK_006["TASK-006 — Loop crossfade at the boundary (feat/audio-engine-crossfade)"]
+    TASK_007["TASK-007 — Waveform peak computation + disk cache (feat/waveform-cache)"]
+    TASK_008["TASK-008 — Mixer state (volume/mute/solo), real-time-safe propagation (feat/mixer-state)"]
+    TASK_009["TASK-009 — IPC Commands surface (feat/ipc-commands)"]
+    TASK_010["TASK-010 — IPC Events surface (playback_progress, waveform_ready, transport_state_changed, audio_error) (feat/ipc-events)"]
+    TASK_011["TASK-011 — `.cho` parser (Score Metadata Manager) (feat/cho-parser)"]
+    TASK_012["TASK-012 — `score_loaded` event + real-time chord/beat slice (feat/score-events)"]
+    TASK_013["TASK-013 — Stem Import Screen (Angular) (feat/ui-stem-import-screen)"]
+    TASK_014["TASK-014 — Transport Controls (Angular) (feat/ui-transport-controls)"]
+    TASK_015["TASK-015 — Timeline + Waveform (Angular) (feat/ui-timeline-waveform)"]
+    TASK_016["TASK-016 — Stem Mixer (Angular) (feat/ui-stem-mixer)"]
+    TASK_017["TASK-017 — Chord/Tab View (Angular, read-only) (feat/ui-chord-tab-view)"]
+    TASK_018["TASK-018 — Error Modal (Angular) (feat/ui-error-modal)"]
+    TASK_019["TASK-019 — End-to-end manual QA pass (v1 golden path) (test/v1-golden-path)"]
+  In_Progress["In Progress"]
+  Review["Review"]
+  Done["Done"]</pre>
+      </div>
+      <div id="board-pt-wrap" hidden>
+        <pre class="mermaid" id="board-pt">kanban
+  Backlog["Backlog"]
+    TASK_001["TASK-001 — Session/State Manager e fiação do AppState (feat/session-app-state)"]
+    TASK_002["TASK-002 — Project Persistence: carregar/salvar, escritas atômicas, schemaVersion (feat/project-persistence)"]
+    TASK_003["TASK-003 — Stem Importer: importação manual, validação, upmix de mono (feat/stem-importer)"]
+    TASK_004["TASK-004 — Loop &amp; Marker Manager (feat/loop-marker-manager)"]
+    TASK_005["TASK-005 — Audio Engine: saída cpal + decodificação symphonia + pipeline rtrb (feat/audio-engine-playback)"]
+    TASK_006["TASK-006 — Crossfade na fronteira do loop (feat/audio-engine-crossfade)"]
+    TASK_007["TASK-007 — Cálculo de picos de waveform + cache em disco (feat/waveform-cache)"]
+    TASK_008["TASK-008 — Estado do mixer (volume/mute/solo), propagação segura para tempo real (feat/mixer-state)"]
+    TASK_009["TASK-009 — Superfície de IPC Commands (feat/ipc-commands)"]
+    TASK_010["TASK-010 — Superfície de IPC Events (playback_progress, waveform_ready, transport_state_changed, audio_error) (feat/ipc-events)"]
+    TASK_011["TASK-011 — Parser do `.cho` (Score Metadata Manager) (feat/cho-parser)"]
+    TASK_012["TASK-012 — Evento `score_loaded` + fatia de acorde/batida em tempo real (feat/score-events)"]
+    TASK_013["TASK-013 — Tela de Importação de Stems (Angular) (feat/ui-stem-import-screen)"]
+    TASK_014["TASK-014 — Controles de Transporte (Angular) (feat/ui-transport-controls)"]
+    TASK_015["TASK-015 — Timeline + Waveform (Angular) (feat/ui-timeline-waveform)"]
+    TASK_016["TASK-016 — Mixer de Stems (Angular) (feat/ui-stem-mixer)"]
+    TASK_017["TASK-017 — Chord/Tab View (Angular, somente leitura) (feat/ui-chord-tab-view)"]
+    TASK_018["TASK-018 — Modal de Erro (Angular) (feat/ui-error-modal)"]
+    TASK_019["TASK-019 — Passe manual de QA ponta a ponta (golden path da v1) (test/v1-golden-path)"]
+  In_Progress["In Progress"]
+  Review["Review"]
+  Done["Done"]</pre>
+      </div>
+    </div>
+    <div class="legend" aria-hidden="true">
+      <span><span class="dot backlog"></span>Backlog &mdash; not started</span>
+      <span><span class="dot progress"></span>In Progress</span>
+      <span><span class="dot review"></span>Review</span>
+      <span><span class="dot done"></span>Done</span>
+    </div>
+  </section>
+
+  <footer class="notes">
+    <div class="col">
+      <b>Keep this in sync</b> &mdash; whenever <code>TODO.md</code> or
+      <code>TODO.pt-BR.md</code>'s task/column structure changes, regenerate
+      this file (the <code>kanban_sync_reminder.py</code> hook nudges this
+      automatically, but don't rely on remembering to check the reminder).
+    </div>
+    <div class="col">
+      <b>Regenerate</b>
+      <div class="cmd">python3 scripts/todo_to_kanban.py --html</div>
+    </div>
+  </footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.15.0/mermaid.min.js"></script>
+<script>
+  (function () {
+    var isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({ startOnLoad: false, theme: isDark ? 'dark' : 'default' });
+
+    mermaid.run({ querySelector: '.mermaid' }).then(function () {
+      var note = document.getElementById('loading-note');
+      if (note) note.remove();
+    }).catch(function (err) {
+      var note = document.getElementById('loading-note');
+      if (note) note.textContent = 'Could not render the diagram (' + err.message + '). Mermaid failed to load -- check your internet connection.';
+    });
+
+    var btnEn = document.getElementById('btn-en');
+    var btnPt = document.getElementById('btn-pt');
+    var wrapEn = document.getElementById('board-en-wrap');
+    var wrapPt = document.getElementById('board-pt-wrap');
+    var sourceFile = document.getElementById('source-file');
+
+    function showEn() {
+      wrapEn.hidden = false;
+      wrapPt.hidden = true;
+      btnEn.setAttribute('aria-pressed', 'true');
+      btnPt.setAttribute('aria-pressed', 'false');
+      sourceFile.textContent = 'TODO.md';
+    }
+    function showPt() {
+      wrapEn.hidden = true;
+      wrapPt.hidden = false;
+      btnEn.setAttribute('aria-pressed', 'false');
+      btnPt.setAttribute('aria-pressed', 'true');
+      sourceFile.textContent = 'TODO.pt-BR.md';
+    }
+    btnEn.addEventListener('click', showEn);
+    btnPt.addEventListener('click', showPt);
+  })();
+</script>
+</body>
+</html>

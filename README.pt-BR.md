@@ -97,7 +97,10 @@ já que nenhuma lógica de domínio do núcleo Rust está implementada ainda.
 
 - [`docs/architecture.md`](docs/architecture.md) — arquitetura completa: componentes, contrato de IPC, o formato `.cho`, fluxos de dados.
 - [`docs/project-name.md`](docs/project-name.md) — por que o projeto se chama StemLoft.
-- [`TODO.md`](TODO.md) — decisões pendentes e o que falta antes da implementação.
+- [`TODO.md`](TODO.md) — board de tarefas de implementação da v1
+  (Backlog/In Progress/Review/Done, critérios de aceite, branch por
+  tarefa); gere a visão em Kanban Mermaid dele com
+  [`scripts/todo_to_kanban.py`](scripts/todo_to_kanban.py).
 - [`distrobox/README.md`](distrobox/README.md) — ambiente de desenvolvimento Arch Linux reproduzível (Distrobox/Podman): o que tem na imagem (`Containerfile`) e como o container é criado a partir dela (`distrobox.ini`).
 
 ### Contribuindo
