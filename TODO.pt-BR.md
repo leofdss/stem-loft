@@ -80,6 +80,7 @@ Session roteia `Commands`.
 **Critérios de aceite:**
 - [ ] `AppState` corresponde à [nota de design do modelo de concorrência](docs/architecture.md#design-note-concurrency-model-for-shared-state) — sem channels, sem actor
 - [ ] `Session` guarda apenas "qual projeto está aberto"; todo handler de `Command` delega ao módulo dono daquele domínio, conforme [Session as a thin router](docs/architecture.md#design-note-session-as-a-thin-router)
+- [ ] Testes unitários cobrem o `Session` despachando um `Command` para o módulo correto (um módulo falso registra a chamada), sem retestar a lógica própria daquele módulo
 - [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `rust-core-reviewer`
 
@@ -101,6 +102,7 @@ explícito).
 - [ ] Escritas acontecem em um checkpoint com debounce, não a cada `Command` (veja [nota de design](docs/architecture.md#design-note-when-project-persistence-writes))
 - [ ] Os três casos de `schemaVersion` têm teste cobrindo
 - [ ] Um crash simulado no meio de uma escrita deixa o arquivo anterior intacto (teste)
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-003 — Stem Importer: importação manual, validação, upmix de mono
@@ -118,6 +120,8 @@ cabeçalho do arquivo (sem decodificação completa).
 - [ ] Um stem com taxa de amostragem diferente dos já importados é rejeitado com erro explícito, não resampleado silenciosamente
 - [ ] Um stem mono é convertido para estéreo na importação — `Audio Engine` nunca vê um buffer mono
 - [ ] `durationSec` é lido do cabeçalho e armazenado conforme [Consistência entre os stems de um projeto](docs/architecture.md#consistency-across-a-projects-stems)
+- [ ] Testes unitários cobrem: um descompasso de taxa de amostragem é rejeitado, um stem mono é convertido para estéreo, e `durationSec` é lido corretamente, cada um contra um arquivo de fixture pequeno e real
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-004 — Loop & Marker Manager
@@ -133,6 +137,8 @@ projeto.
 **Critérios de aceite:**
 - [ ] `endSec` além da duração do projeto (o `durationSec` do stem mais longo) é rejeitado, não truncado silenciosamente
 - [ ] Os marcadores atuais são expostos ao `Audio Engine` para a reprodução em loop
+- [ ] Testes unitários cobrem: um marcador dentro da duração é aceito, `endSec` além da duração é rejeitado
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-005 — Audio Engine: saída cpal + decodificação symphonia + pipeline rtrb
@@ -148,7 +154,9 @@ para reprodução básica (ainda sem loop/crossfade — isso é a TASK-006).
 **Critérios de aceite:**
 - [ ] Decodificação e qualquer I/O acontecem fora do callback do `cpal`; o callback só lê buffers já preparados
 - [ ] Nenhuma alocação, lock ou I/O dentro do callback (checado contra a checklist de `realtime-audio-safety`)
+- [ ] Testes unitários cobrem a entrega decodificação → ring buffer isoladamente, sem precisar de um dispositivo `cpal` real
 - [ ] Um humano confirma reprodução audível e sem glitches em pelo menos um dispositivo real
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-006 — Crossfade na fronteira do loop
@@ -164,7 +172,10 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] O buffer do início do loop está pronto antes de o callback chegar em `endSec`
 - [ ] O crossfade é matemática pura sobre amostras já decodificadas dentro do callback — sem nova alocação/I/O
+- [ ] Testes unitários cobrem a matemática do crossfade (curva de fade) sobre buffers de amostra sintéticos, independente do `cpal`
 - [ ] Um humano escuta a fronteira do loop em pelo menos um projeto real e confirma ausência de cliques/artefatos
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
+- [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-007 — Cálculo de picos de waveform + cache em disco
 - **Área:** Núcleo Rust — Audio Engine / Project Persistence
@@ -177,6 +188,9 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 - [ ] Picos são calculados uma vez (na importação, ou na primeira abertura se não houver cache) e escritos pelo caminho de escrita atômica
 - [ ] O cache é invalidado quando o stem correspondente é reimportado/substituído
 - [ ] `waveform_ready` serve os picos do cache em disco quando presente, sem redecodificar
+- [ ] Testes unitários cobrem: picos calculados no primeiro acesso, o cache em disco reaproveitado (não recalculado) na próxima abertura, e invalidado após reimportação
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
+- [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-008 — Estado do mixer (volume/mute/solo), propagação segura para tempo real
 - **Área:** Núcleo Rust — Audio Engine
@@ -188,6 +202,9 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] Uma mudança de volume/mute/solo escreve em um atomic/double-buffer que o callback lê — nunca um `Mutex` no qual ele possa bloquear
 - [ ] Uma mudança no mixer marca o projeto como sujo para o checkpoint com debounce (TASK-002), não uma escrita a cada tick
+- [ ] Testes unitários cobrem as transições de estado de volume/mute/solo e a flag de sujeira sendo marcada numa mudança
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
+- [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-009 — Superfície de IPC Commands
 - **Área:** Communication Bridge — Tauri IPC
@@ -199,6 +216,8 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] A fila de `Commands` mora inteiramente no núcleo Rust; nada no Angular enfileira, deduplica ou reordena
 - [ ] Cada handler de `Command` apenas despacha para o módulo dono daquele domínio — sem lógica de coordenação no próprio handler
+- [ ] Testes unitários cobrem cada handler de `Command` despachando para seu módulo dono, independente do runtime do Tauri
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `rust-core-reviewer` e pelo `angular-shell-reviewer` (pontos de chamada)
 
 ### TASK-010 — Superfície de IPC Events (playback_progress, waveform_ready, transport_state_changed, audio_error)
@@ -211,6 +230,9 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] Cada evento corresponde exatamente à [tabela de eventos](docs/architecture.md#events-table) (produtor, payload, consumidores)
 - [ ] `audio_error` é de fato alcançável em teste manual (ex.: desconectar o dispositivo de saída)
+- [ ] Testes unitários cobrem o formato do payload de cada evento contra a [tabela de eventos](docs/architecture.md#events-table)
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
+- [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-011 — Parser do `.cho` (Score Metadata Manager)
 - **Área:** Núcleo Rust — Score Metadata Manager
@@ -223,6 +245,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 - [ ] Toda regra de gramática da skill `chordpro-format` (um acorde por linha, âncoras `{t:}`, gramática de tablatura, resolução de `startSec`/`endSec`) tem um teste unitário passando
 - [ ] Uma diretiva desconhecida é ignorada, não fatal
 - [ ] `score_parse_error` carrega a linha e a mensagem do problema sem travar o resto do app
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-012 — Evento `score_loaded` + fatia de acorde/batida em tempo real
@@ -235,6 +258,9 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] `score_loaded` dispara uma vez por parse com `tempo`/`time`/`tuning` do cabeçalho
 - [ ] O payload em tempo real a cada tick carrega só o acorde/batida ativo, não a partitura inteira (veja [Real-time visual state](docs/architecture.md#real-time-visual-state-angular))
+- [ ] Testes unitários cobrem a seleção da fatia de acorde/batida para alguns valores de `positionSec` contra uma partitura pequena e fixa
+- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
+- [ ] Revisado pelo `rust-core-reviewer`
 
 ### TASK-013 — Tela de Importação de Stems (Angular)
 - **Área:** Angular — Stem Import Screen
@@ -246,6 +272,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] Dispara o `Command` de importação imediatamente, sem fila própria no cliente ou atualização otimista
 - [ ] O controle que disparou fica desabilitado até a resposta daquele `Command` chegar
+- [ ] Vitest cobre: o `Command` dispara na ação do usuário, e o controle fica desabilitado até a resposta chegar
 - [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
@@ -258,6 +285,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 
 **Critérios de aceite:**
 - [ ] Reflete `transport_state_changed`; nunca assume um estado antes de o evento chegar
+- [ ] Vitest cobre o estado exibido atualizando para cada variante de `transport_state_changed`
 - [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
@@ -271,6 +299,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] Renderiza os picos de `waveform_ready` e a posição de `playback_progress`
 - [ ] A seleção de marcador/loop envia `set_markers` e espera a resposta antes de mover o marcador na tela
+- [ ] Vitest cobre a renderização a partir de fixtures injetadas de `waveform_ready`/`playback_progress`, e o marcador não se mover antes da resposta de `set_markers`
 - [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
@@ -283,6 +312,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 
 **Critérios de aceite:**
 - [ ] Arrastar um fader não dispara uma escrita de persistência a cada tick (verificado contra o debounce da TASK-002/TASK-008)
+- [ ] Vitest cobre o fader disparando o `Command` do mixer sem nenhuma lógica extra própria do cliente (fila, debounce ou dedup)
 - [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
@@ -296,6 +326,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] Renderiza acordes/tablatura/letra sincronizados com a posição de reprodução
 - [ ] `score_parse_error` coloca só essa view em estado de erro — o resto da tela continua funcionando
+- [ ] Vitest cobre o destaque de acorde/batida a partir de uma fixture no formato `ChordBeatStream`, e o estado de erro isolado em `score_parse_error`
 - [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
@@ -309,6 +340,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] `audio_error` e `score_parse_error` abrem o modal com a causa e a mensagem do evento
 - [ ] Fechar o modal não pausa nem desfaz nada que já esteja rodando no núcleo
+- [ ] Vitest cobre o modal abrindo com a causa/mensagem corretas para os dois eventos de erro, e o dismiss não tocando em nenhum outro estado
 - [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 

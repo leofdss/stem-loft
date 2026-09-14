@@ -72,6 +72,7 @@ manual-DI constructors for the domain modules Session routes `Commands` to.
 **Acceptance criteria:**
 - [ ] `AppState` matches [the concurrency-model design note](docs/architecture.md#design-note-concurrency-model-for-shared-state) — no channels, no actor
 - [ ] `Session` holds only "which project is open"; every `Command` handler delegates to the module owning that domain, per [Session as a thin router](docs/architecture.md#design-note-session-as-a-thin-router)
+- [ ] Unit tests cover `Session` dispatching a `Command` to the correct module (a fake module records the call), without re-testing that module's own logic
 - [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
 - [ ] Reviewed by `rust-core-reviewer`
 
@@ -92,6 +93,7 @@ lower version runs migrations, higher version errors explicitly).
 - [ ] Writes happen at a debounce/checkpoint, not once per `Command` (see [design note](docs/architecture.md#design-note-when-project-persistence-writes))
 - [ ] All three `schemaVersion` cases are covered by a test
 - [ ] A simulated crash mid-write leaves the previous file intact (test)
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
 - [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-003 — Stem Importer: manual import, validation, mono upmix
@@ -108,6 +110,8 @@ upmix, and `durationSec` extraction from the file header (no full decode).
 - [ ] A stem whose sample rate differs from already-imported stems is rejected with an explicit error, not silently resampled
 - [ ] A mono stem is upmixed to stereo at import time — `Audio Engine` never sees a mono buffer
 - [ ] `durationSec` is read from the header and stored per [Consistency across a project's stems](docs/architecture.md#consistency-across-a-projects-stems)
+- [ ] Unit tests cover: a sample-rate mismatch is rejected, a mono stem is upmixed to stereo, and `durationSec` is read correctly, each against a real small fixture file
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
 - [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-004 — Loop & Marker Manager
@@ -123,6 +127,8 @@ duration.
 **Acceptance criteria:**
 - [ ] `endSec` beyond the project's duration (longest stem's `durationSec`) is rejected, not silently clamped
 - [ ] Current markers are exposed to `Audio Engine` for loop playback
+- [ ] Unit tests cover: a marker within duration is accepted, `endSec` beyond duration is rejected
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
 - [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-005 — Audio Engine: cpal output + symphonia decode + rtrb pipeline
@@ -138,7 +144,9 @@ playback (no loop/crossfade yet — that's TASK-006).
 **Acceptance criteria:**
 - [ ] Decoding and any I/O happen outside the `cpal` callback; the callback only reads already-prepared buffers
 - [ ] No allocation, lock, or I/O inside the callback (checked against the `realtime-audio-safety` checklist)
+- [ ] Unit tests cover the decode → ring-buffer handoff in isolation, without needing a real `cpal` device
 - [ ] A human confirms audible, glitch-free playback on at least one real device
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
 - [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-006 — Loop crossfade at the boundary
@@ -154,7 +162,10 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] The start-of-loop buffer is prepared before the callback reaches `endSec`
 - [ ] The crossfade is pure math over already-decoded samples inside the callback — no new allocation/I/O
+- [ ] Unit tests cover the crossfade math (fade curve) over synthetic sample buffers, independent of `cpal`
 - [ ] A human listens for clicks/artifacts at the loop boundary on at least one real project and confirms none
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
+- [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-007 — Waveform peak computation + disk cache
 - **Area:** Rust core — Audio Engine / Project Persistence
@@ -167,6 +178,9 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 - [ ] Peaks are computed once (on import, or on first open if no cache exists) and written through the atomic-write path
 - [ ] The cache is invalidated when its stem is re-imported/replaced
 - [ ] `waveform_ready` serves peaks from the disk cache when present, without redecoding
+- [ ] Unit tests cover: peaks computed on first access, the disk cache reused (not recomputed) on the next open, and invalidated after re-import
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
+- [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-008 — Mixer state (volume/mute/solo), real-time-safe propagation
 - **Area:** Rust core — Audio Engine
@@ -178,6 +192,9 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] A volume/mute/solo change writes to an atomic/double-buffer the callback reads — never a `Mutex` it can block on
 - [ ] A mixer change marks the project dirty for the debounced checkpoint (TASK-002), not a write per tick
+- [ ] Unit tests cover the volume/mute/solo state transitions and the dirty flag being set on a change
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
+- [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-009 — IPC Commands surface
 - **Area:** Communication Bridge — Tauri IPC
@@ -189,6 +206,8 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] The `Commands` queue lives entirely in the Rust core; nothing in Angular queues, dedups, or reorders
 - [ ] Each `Command` handler only dispatches to the module owning that domain — no coordination logic in the handler itself
+- [ ] Unit tests cover each `Command` handler dispatching to its owning module, independent of the Tauri runtime
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
 - [ ] Reviewed by `rust-core-reviewer` and `angular-shell-reviewer` (call sites)
 
 ### TASK-010 — IPC Events surface (playback_progress, waveform_ready, transport_state_changed, audio_error)
@@ -201,6 +220,9 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] Each event matches the [events table](docs/architecture.md#events-table) exactly (producer, payload, consumers)
 - [ ] `audio_error` is actually reachable in manual testing (e.g. disconnect the output device)
+- [ ] Unit tests cover each event's payload shape against the [events table](docs/architecture.md#events-table)
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
+- [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-011 — `.cho` parser (Score Metadata Manager)
 - **Area:** Rust core — Score Metadata Manager
@@ -213,6 +235,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 - [ ] Every grammar rule in the `chordpro-format` skill (one chord per line, `{t:}` anchors, tablature grammar, `startSec`/`endSec` resolution) has a passing unit test
 - [ ] An unknown directive is ignored, not fatal
 - [ ] `score_parse_error` carries the offending line and message without halting the rest of the app
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
 - [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-012 — `score_loaded` event + real-time chord/beat slice
@@ -225,6 +248,9 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] `score_loaded` fires once per parse with `tempo`/`time`/`tuning` from the header
 - [ ] The per-tick real-time payload carries only the active chord/beat, not the whole score (see [Real-time visual state](docs/architecture.md#real-time-visual-state-angular))
+- [ ] Unit tests cover the chord/beat slice selection for a few `positionSec` values against a small fixed score
+- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
+- [ ] Reviewed by `rust-core-reviewer`
 
 ### TASK-013 — Stem Import Screen (Angular)
 - **Area:** Angular — Stem Import Screen
@@ -236,6 +262,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] Fires the import `Command` immediately, with no client-side queue or optimistic update
 - [ ] The triggering control stays disabled until that `Command`'s response arrives
+- [ ] Vitest covers: the `Command` fires on user action, and the control disables until the response arrives
 - [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
@@ -248,6 +275,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 
 **Acceptance criteria:**
 - [ ] Reflects `transport_state_changed`; never assumes a state before the event arrives
+- [ ] Vitest covers the displayed state updating for each `transport_state_changed` variant
 - [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
@@ -261,6 +289,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] Renders `waveform_ready` peaks and the `playback_progress` position
 - [ ] Marker/loop selection sends `set_markers` and waits for the response before moving the marker on screen
+- [ ] Vitest covers rendering from injected `waveform_ready`/`playback_progress` fixtures, and the marker not moving before the `set_markers` response
 - [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
@@ -273,6 +302,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 
 **Acceptance criteria:**
 - [ ] Dragging a fader doesn't trigger a persistence write per tick (verified against TASK-002/TASK-008's debounce)
+- [ ] Vitest covers the fader firing the mixer `Command` with no extra client-side logic (queue, debounce, or dedup) of its own
 - [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
@@ -286,6 +316,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] Renders chords/tablature/lyrics synced to the playback position
 - [ ] `score_parse_error` puts only this view into an error state — the rest of the screen keeps working
+- [ ] Vitest covers chord/beat highlighting from a `ChordBeatStream`-shaped fixture, and the isolated error state on `score_parse_error`
 - [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
@@ -299,6 +330,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] `audio_error` and `score_parse_error` open the modal with the event's cause and message
 - [ ] Dismissing the modal doesn't pause or undo anything already running in the core
+- [ ] Vitest covers the modal opening with the right cause/message for both error events, and dismiss not touching any other state
 - [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 

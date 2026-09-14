@@ -143,6 +143,47 @@ strong judgment to get it right the first time:
   a cheaper model in an area with no such check just because *some* hook
   exists in the repo.
 
+## Testing policy: tests are the source of truth
+
+`TODO.md`'s acceptance criteria are deliberately explicit about what needs
+a test — treat that as the floor, not a suggestion. As the codebase grows
+past this initial scaffold, the test suite (not a person's memory of how
+something used to behave) is what proves a change didn't silently break
+something else.
+
+- **Every new/changed piece of logic gets a test in the same change.**
+  Rust: `#[cfg(test)] mod tests` in the same file — see
+  `src-tauri/src/core/persistence.rs`'s `atomic_write` tests for the
+  pattern already in this repo. Angular: a `.spec.ts` beside the file it
+  tests, run through Vitest via `@angular/build:unit-test`.
+- **A task isn't `Done` until its "Unit tests cover ..." bullet actually
+  passes** — run `cargo test` / `npm run test -- --watch=false` (directly
+  or via `remote-build-offload`), not just `cargo check`/`tsc`. Those only
+  prove the code compiles, not that it does the right thing — see [Model
+  selection](#model-selection-when-a-cheaper-model-can-safely-do-the-work)
+  above on why that distinction matters for what's safe to delegate.
+- **Coverage is measured on both sides:**
+  - Rust: `cargo llvm-cov --summary-only` (or `--html` for a browsable
+    report) — a `cargo` subcommand installed in the dev container
+    (`cargo install cargo-llvm-cov` if it's ever missing locally).
+  - Angular: `npm run test` reports coverage by default now
+    (`ui/angular.json`'s `test` target has `coverage: true` and
+    `@vitest/coverage-v8` installed) — a text summary on every run, plus
+    `html`/`lcov` reports written to `ui/coverage/` (gitignored).
+- **No hard coverage percentage is enforced yet, on purpose.** Most core
+  modules are still stubs — a threshold today would either be trivially
+  met or fail on a placeholder that isn't real logic yet. Once a task's
+  real implementation lands, its own "Unit tests cover ..." acceptance
+  criteria are the bar for that code, not a global number. Don't use "the
+  repo-wide percentage is already low" as a reason to skip testing new
+  logic, and don't let a stub's low number block an unrelated task.
+- **A failing test is feedback, not an obstacle.** Never delete, skip
+  (`#[ignore]`, `.skip()`), or loosen an assertion just to make the suite
+  green — figure out whether the code or the test is wrong, the same way
+  you'd treat a `cargo check`/`tsc` error. This is the same hard-feedback-
+  loop principle the Model selection section above is built on; a test
+  suite people can't trust stops being a source of truth at all.
+
 ## Docs are bilingual, tooling isn't
 
 Every human-facing doc (`README.md`, `TODO.md`, `docs/architecture.md`,
