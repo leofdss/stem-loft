@@ -236,6 +236,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] Fires the import `Command` immediately, with no client-side queue or optimistic update
 - [ ] The triggering control stays disabled until that `Command`'s response arrives
+- [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
 ### TASK-014 — Transport Controls (Angular)
@@ -247,6 +248,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 
 **Acceptance criteria:**
 - [ ] Reflects `transport_state_changed`; never assumes a state before the event arrives
+- [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
 ### TASK-015 — Timeline + Waveform (Angular)
@@ -259,6 +261,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] Renders `waveform_ready` peaks and the `playback_progress` position
 - [ ] Marker/loop selection sends `set_markers` and waits for the response before moving the marker on screen
+- [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
 ### TASK-016 — Stem Mixer (Angular)
@@ -270,6 +273,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 
 **Acceptance criteria:**
 - [ ] Dragging a fader doesn't trigger a persistence write per tick (verified against TASK-002/TASK-008's debounce)
+- [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
 ### TASK-017 — Chord/Tab View (Angular, read-only)
@@ -282,6 +286,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] Renders chords/tablature/lyrics synced to the playback position
 - [ ] `score_parse_error` puts only this view into an error state — the rest of the screen keeps working
+- [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
 ### TASK-018 — Error Modal (Angular)
@@ -294,6 +299,7 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 **Acceptance criteria:**
 - [ ] `audio_error` and `score_parse_error` open the modal with the event's cause and message
 - [ ] Dismissing the modal doesn't pause or undo anything already running in the core
+- [ ] `npm run build` (tsc) and `prettier --check` clean (via `remote-build-offload`)
 - [ ] Reviewed by `angular-shell-reviewer`
 
 ### TASK-019 — End-to-end manual QA pass (v1 golden path)

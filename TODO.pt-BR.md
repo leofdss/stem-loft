@@ -246,6 +246,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] Dispara o `Command` de importação imediatamente, sem fila própria no cliente ou atualização otimista
 - [ ] O controle que disparou fica desabilitado até a resposta daquele `Command` chegar
+- [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
 ### TASK-014 — Controles de Transporte (Angular)
@@ -257,6 +258,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 
 **Critérios de aceite:**
 - [ ] Reflete `transport_state_changed`; nunca assume um estado antes de o evento chegar
+- [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
 ### TASK-015 — Timeline + Waveform (Angular)
@@ -269,6 +271,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] Renderiza os picos de `waveform_ready` e a posição de `playback_progress`
 - [ ] A seleção de marcador/loop envia `set_markers` e espera a resposta antes de mover o marcador na tela
+- [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
 ### TASK-016 — Mixer de Stems (Angular)
@@ -280,6 +283,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 
 **Critérios de aceite:**
 - [ ] Arrastar um fader não dispara uma escrita de persistência a cada tick (verificado contra o debounce da TASK-002/TASK-008)
+- [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
 ### TASK-017 — Chord/Tab View (Angular, somente leitura)
@@ -292,6 +296,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] Renderiza acordes/tablatura/letra sincronizados com a posição de reprodução
 - [ ] `score_parse_error` coloca só essa view em estado de erro — o resto da tela continua funcionando
+- [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
 ### TASK-018 — Modal de Erro (Angular)
@@ -304,6 +309,7 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 **Critérios de aceite:**
 - [ ] `audio_error` e `score_parse_error` abrem o modal com a causa e a mensagem do evento
 - [ ] Fechar o modal não pausa nem desfaz nada que já esteja rodando no núcleo
+- [ ] `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] Revisado pelo `angular-shell-reviewer`
 
 ### TASK-019 — Passe manual de QA ponta a ponta (golden path da v1)
