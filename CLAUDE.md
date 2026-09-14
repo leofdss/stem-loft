@@ -75,11 +75,21 @@ after the matching change: `rust-core-reviewer` after anything under
   `scripts/check_doc_links.py` across the repo and reports any internal
   link or `#anchor` that doesn't actually resolve. Silent when nothing's
   broken.
+- `tsc_check_on_ts_edit.py` — the Angular equivalent of
+  `cargo_check_on_rust_edit.py`: runs `tsc --noEmit` after every `.ts`/
+  `.html` edit under `ui/` and hands the type error back. No-ops if
+  `ui/node_modules` hasn't been installed yet.
+- `npm_deps_check.py` — after any `package.json` edit, runs
+  `scripts/check_npm_deps.py` and flags a dependency outside the approved
+  baseline. Covers the gap `bash_guard.py` can't: a dependency added by
+  hand-editing `package.json` and then running a bare `npm install`/`npm
+  ci` (no positional package, which `bash_guard.py` allows).
 
-None of the four doc-sync hooks above block anything — they're
-`PostToolUse` feedback, same convention as `cargo_check_on_rust_edit.py`:
-the write already happened, the hook just hands back what it found so you
-can fix it before calling the task done.
+None of the hooks above block anything — they're all `PostToolUse`
+feedback, same convention as `cargo_check_on_rust_edit.py`: the write
+already happened, the hook just hands back what it found so you can fix it
+before calling the task done. Only `bash_guard.py` (`PreToolUse`) actually
+blocks a tool call before it runs.
 
 ## Scripts (`scripts/`) — prefer these over re-deriving the check by hand
 
@@ -91,11 +101,40 @@ can fix it before calling the task done.
   a large doc restructure instead of trusting a visual scan.
 - `check_bilingual_parity.py` — validates heading-structure and
   invariant-code-block parity between each `foo.md`/`foo.pt-BR.md` pair.
+- `check_npm_deps.py` — diffs `ui/package.json`'s dependencies against the
+  hardcoded approved baseline (see the script's `ALLOWED` set).
 
-All three are deterministic: same input, same output, regardless of who
+All four are deterministic: same input, same output, regardless of who
 runs them or how they read the surrounding prose — that's the point. If
 you find yourself re-deriving one of their checks by manually reading a
 diff, run the script instead.
+
+## Model selection: when a cheaper model can safely do the work
+
+The orchestrating agent doesn't need to write every line itself — but only
+delegate to a cheaper/faster model (e.g. `haiku`) when the task has a
+**hard, mechanical feedback loop** it can iterate against without needing
+strong judgment to get it right the first time:
+
+- **Safe to delegate** (a hook already catches a wrong-but-plausible
+  answer): scaffolding-heavy Rust (`cargo_check_on_rust_edit.py` gates it)
+  or Angular (`tsc_check_on_ts_edit.py` gates it) work, and anything
+  `todo_to_kanban.py`/the doc checkers already verify mechanically. See
+  `canvas-to-mermaid` (`model: haiku` in its agent file) for the reference
+  shape: a narrow task, a deterministic script doing the real work, the
+  model mostly orchestrating and reporting.
+- **Keep on a stronger model**: anything marked `Human` or `Both` in
+  `TODO.md`'s "Suitable for" field, the `.cho` parser's grammar edge cases,
+  and anything inside the `cpal` real-time callback — a hook can confirm
+  the code *compiles*, not that a subtle audio/timing bug isn't hiding in
+  code that compiles fine. `rust-core-reviewer` and `angular-shell-reviewer`
+  stay on `sonnet`: their entire job is the judgment layer a compiler can't
+  provide (is this *architecturally* right, not just syntactically valid).
+- A compiling-but-wrong answer from a cheap model is only caught if
+  something downstream actually checks the "wrong" part — a green
+  `cargo check` doesn't mean a correct crossfade. Don't delegate a task to
+  a cheaper model in an area with no such check just because *some* hook
+  exists in the repo.
 
 ## Docs are bilingual, tooling isn't
 

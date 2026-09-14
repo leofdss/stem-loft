@@ -29,6 +29,17 @@
             "type": "command",
             "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/doc_links_check.py\" ]; then python3 \"$root/.claude/hooks/doc_links_check.py\"; fi",
             "statusMessage": "Checking internal doc links..."
+          },
+          {
+            "type": "command",
+            "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/tsc_check_on_ts_edit.py\" ]; then python3 \"$root/.claude/hooks/tsc_check_on_ts_edit.py\"; fi",
+            "statusMessage": "Running tsc --noEmit...",
+            "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "root=$(git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$root\" ] && [ -f \"$root/.claude/hooks/npm_deps_check.py\" ]; then python3 \"$root/.claude/hooks/npm_deps_check.py\"; fi",
+            "statusMessage": "Checking npm dependency baseline..."
           }
         ]
       }
