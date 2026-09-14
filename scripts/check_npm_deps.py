@@ -47,6 +47,10 @@ ALLOWED = {
     "prettier",
     "typescript",
     "vitest",
+    # Coverage provider for `ng test`'s coverage reporting -- approved by
+    # the user 2026-09-14 alongside enabling coverage in angular.json (see
+    # CLAUDE.md's testing-policy section).
+    "@vitest/coverage-v8",
 }
 
 DEFAULT_PACKAGE_JSON = Path("ui/package.json")
