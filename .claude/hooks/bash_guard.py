@@ -17,7 +17,11 @@ import re
 import sys
 
 NPM_INSTALL_RE = re.compile(
-    r"(^|[;&|]\s*|&&\s*)npm\s+(install|i|add)\s+(?!-)(?!$)\S"
+    r"(^|[;&|]\s*|&&\s*)npm\s+(install|i|add)\s+"
+    r"(?!-)(?!$)"
+    r"(?!\d*[<>])"  # not a redirection (`2>&1`, `>out.txt`, `2>/tmp/log`, ...)
+    r"(?![|&;])"    # not a shell control operator (`|`, `&`, `&>`, `;`, ...)
+    r"\S"
 )
 
 HEREDOC_RE = re.compile(
