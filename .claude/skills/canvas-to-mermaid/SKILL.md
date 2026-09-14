@@ -14,6 +14,13 @@ by following the rules below in the order they appear.
 Don't skip steps. Don't invent content that isn't in the `.canvas` file: the
 final document must be traceable 1:1 to the canvas's nodes and edges.
 
+> **Naming note:** there's also an *agent* named `canvas-to-mermaid`
+> (`.claude/agents/canvas-to-mermaid.md`, same name, different namespace —
+> a skill and an agent don't collide). That agent's only job is to run this
+> skill end-to-end on a lightweight model; it isn't a separate or
+> alternative process. Invoking this skill directly (as any agent can)
+> follows the exact same steps below.
+
 ## Use the script first — don't do the mechanical part by hand
 
 This directory has a deterministic converter, `convert.py`, which already

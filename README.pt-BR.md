@@ -109,6 +109,12 @@ atualizar o documento junto com o código caso o alterem deliberadamente. O
 projeto é GPL-3.0-or-later (veja [Licença](#licença) abaixo), então tudo
 que for contribuído permanece aberto.
 
+Mensagens de commit devem seguir o [Conventional
+Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`,
+`refactor:`, `test:`, `chore:`, ...) — imposto a agentes de IA pelo hook
+`PreToolUse` `.claude/hooks/bash_guard.py`, e esperado também de
+contribuidores humanos.
+
 Este repositório também fornece agentes, skills e hooks do Claude Code
 (`.claude/`) que codificam essas regras para que um assistente de IA
 trabalhando no código as siga automaticamente — por exemplo, um hook

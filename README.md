@@ -104,6 +104,12 @@ the doc alongside the code if they deliberately change it. The project is
 GPL-3.0-or-later (see [License](#license) below), so anything contributed
 stays open.
 
+Commit messages must follow [Conventional
+Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`,
+`refactor:`, `test:`, `chore:`, ...) — enforced for AI agents by the
+`PreToolUse` hook `.claude/hooks/bash_guard.py`, and expected of human
+contributors too.
+
 This repo also ships Claude Code agents, skills, and hooks
 (`.claude/`) that encode these rules so an AI assistant working on the code
 follows them automatically — for example, a `PostToolUse` hook nudges the
