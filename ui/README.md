@@ -1,5 +1,9 @@
 # Stemloft
 
+> **Maintenance note:** this doc has a Brazilian Portuguese sibling at
+> [`README.pt-BR.md`](./README.pt-BR.md). Whenever one is updated, update
+> the other in the same change — don't let the two drift apart.
+
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.1.8.
 
 ## Development server

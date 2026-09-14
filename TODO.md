@@ -1,5 +1,9 @@
 # TODO — Pending decisions before implementation
 
+> **Maintenance note:** this doc has a Brazilian Portuguese sibling at
+> [`TODO.pt-BR.md`](./TODO.pt-BR.md). Whenever one is updated, update
+> the other in the same change — don't let the two drift apart.
+
 Decisions that [`architecture.md`](docs/architecture.md) deliberately left open: these
 aren't architecture bugs, they're design/implementation choices that still need to be
 pinned down before coding starts. Check them off with `[x]` as they're resolved (and

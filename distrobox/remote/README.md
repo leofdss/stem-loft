@@ -1,5 +1,9 @@
 # Remote build offload
 
+> **Maintenance note:** this doc has a Brazilian Portuguese sibling at
+> [`README.pt-BR.md`](./README.pt-BR.md). Whenever one is updated, update
+> the other in the same change — don't let the two drift apart.
+
 Optional: if you have a second, faster always-on Linux machine on the same
 Tailscale/LAN network, with [Distrobox](https://distrobox.it/) and Podman
 installed, you can offload the CPU-heavy parts of the dev loop — `cargo

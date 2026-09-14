@@ -1,5 +1,9 @@
 # StemLoft
 
+> **Maintenance note:** this doc has a Brazilian Portuguese sibling at
+> [`README.pt-BR.md`](./README.pt-BR.md). Whenever one is updated, update
+> the other in the same change — don't let the two drift apart.
+
 A practice tool for musicians, built around looping a section of a song and
 mixing its stems while you play along.
 

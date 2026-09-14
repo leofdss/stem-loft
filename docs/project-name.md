@@ -1,5 +1,10 @@
 # Project name
 
+> **Maintenance note:** this doc has a Brazilian Portuguese sibling at
+> [`project-name.pt-BR.md`](./project-name.pt-BR.md). Whenever one is
+> updated, update the other in the same change — don't let the two drift
+> apart.
+
 ## Why we moved away from "Stem Player"
 
 "Stem Player" only describes a fraction of what the app does — playing back stems. It doesn't describe what the app actually is in practice: the main feature (loop repeats via time markers), the per-stem mixer (volume/mute/solo), the chord/tablature view synced with the timeline (see

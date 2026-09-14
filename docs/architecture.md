@@ -1,5 +1,10 @@
 # StemLoft
 
+> **Maintenance note:** this doc has a Brazilian Portuguese sibling at
+> [`architecture.pt-BR.md`](./architecture.pt-BR.md). Whenever one is
+> updated, update the other in the same change — don't let the two drift
+> apart.
+
 Desktop app for playing back musical _stems_, focused on **creating loop repeats of sections using time markers**.
 
 ## About

@@ -1,5 +1,9 @@
 # Development environment (Distrobox)
 
+> **Maintenance note:** this doc has a Brazilian Portuguese sibling at
+> [`README.pt-BR.md`](./README.pt-BR.md). Whenever one is updated, update
+> the other in the same change — don't let the two drift apart.
+
 This folder holds the two pieces of StemLoft's dev environment: the
 `Containerfile` (what's *inside* the image) and `distrobox.ini` (how the
 container is *created* from it).
