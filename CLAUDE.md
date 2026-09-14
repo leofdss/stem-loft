@@ -18,8 +18,9 @@ enforced by a hook nobody had documented) — don't reintroduce it.
 
 1. [`docs/architecture.md`](docs/architecture.md) — every architecture
    decision and its rationale. Wins over anything below if they disagree.
-2. [`TODO.md`](TODO.md) — decisions `architecture.md` deliberately left
-   open; check before assuming something is undecided.
+2. [`TODO.md`](TODO.md) — the v1 implementation task board (what's scoped,
+   its acceptance criteria, and its status); check it before assuming a
+   piece of work hasn't been scoped yet or before duplicating a task.
 3. The skills in the table below — operational summaries of
    `architecture.md`, written so you don't have to reconstruct the reasoning
    every time. If a skill and `architecture.md` diverge, `architecture.md`
