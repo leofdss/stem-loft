@@ -48,8 +48,8 @@ implements it.
   (e.g. to paste elsewhere) with:
 
   ```bash
-  python3 scripts/todo_to_kanban.py            # prints to stdout
-  python3 scripts/todo_to_kanban.py -o docs/kanban.md
+  python3 scripts/todo_to_kanban.py TODO.md            # prints to stdout
+  python3 scripts/todo_to_kanban.py TODO.md -o docs/kanban.md
   ```
 
   See [`scripts/todo_to_kanban.py`](scripts/todo_to_kanban.py) for how it

@@ -54,15 +54,47 @@ after the matching change: `rust-core-reviewer` after anything under
 - `readme_sync_reminder.py` — nudges you to check `README.md` is still
   accurate after editing `TODO.md`, `docs/architecture.md`,
   `docs/project-name.md`, `distrobox/README.md`, or anything under
-  `.claude/agents/`/`.claude/skills/`.
-- `pt_br_sync_reminder.py` — nudges you to update the counterpart file
-  whenever you edit one half of a `foo.md`/`foo.pt-BR.md` pair (see below).
+  `.claude/agents/`/`.claude/skills/`. This one stays a plain reminder —
+  whether the summary is still *accurate* is a judgment call no script can
+  make.
+- `pt_br_sync_reminder.py` — after editing one half of a `foo.md`/
+  `foo.pt-BR.md` pair, runs `scripts/check_bilingual_parity.py` on that
+  pair and only speaks up with what it actually found (heading structure
+  drift, or a `bash`/`json`/`toml`/`yaml` code block that differs between
+  languages — those must never be translated). Silent if the check comes
+  back clean; falls back to a generic "go check it" only if the checker
+  itself can't run.
 - `kanban_sync_reminder.py` — nudges you to run `python3
   scripts/todo_to_kanban.py --html` whenever you edit `TODO.md` or
   `TODO.pt-BR.md`. That script is the only thing that should ever write
   `docs/kanban.html` — it's a pure function of the two TODO files, so
   running it is always correct regardless of who runs it; never hand-edit
   `docs/kanban.html` directly.
+- `doc_links_check.py` — after any `.md` edit, runs
+  `scripts/check_doc_links.py` across the repo and reports any internal
+  link or `#anchor` that doesn't actually resolve. Silent when nothing's
+  broken.
+
+None of the four doc-sync hooks above block anything — they're
+`PostToolUse` feedback, same convention as `cargo_check_on_rust_edit.py`:
+the write already happened, the hook just hands back what it found so you
+can fix it before calling the task done.
+
+## Scripts (`scripts/`) — prefer these over re-deriving the check by hand
+
+- `todo_to_kanban.py` — `TODO.md`/`TODO.pt-BR.md` → Mermaid `kanban` block
+  or the full `docs/kanban.html` viewer (`--html`). See
+  [`TODO.md`](TODO.md#how-to-use-this-board).
+- `check_doc_links.py` — validates every internal Markdown link/anchor in
+  the repo against GitHub's heading-slug algorithm. Run it yourself after
+  a large doc restructure instead of trusting a visual scan.
+- `check_bilingual_parity.py` — validates heading-structure and
+  invariant-code-block parity between each `foo.md`/`foo.pt-BR.md` pair.
+
+All three are deterministic: same input, same output, regardless of who
+runs them or how they read the surrounding prose — that's the point. If
+you find yourself re-deriving one of their checks by manually reading a
+diff, run the script instead.
 
 ## Docs are bilingual, tooling isn't
 
