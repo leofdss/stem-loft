@@ -42,6 +42,31 @@ Never create, edit, or guess a value for `distrobox/remote/host.local`
 yourself — it's gitignored and machine-specific. If it's missing, that
 means offload is simply not set up here, not that something is broken.
 
+### Step 1b — Confirm the remote container runs the local image (script, not judgment)
+
+With the host reachable, the remote `stemloft` container must run the
+**same image as the local one** — otherwise its results don't stand in for
+local ones. Never decide this by reading tags, dates, or `podman images`
+output yourself (a misread of exactly that output once produced a wrong
+diagnosis). Run the script and act only on its exit code:
+
+```bash
+python3 scripts/check_remote_image.py
+```
+
+- `0` → same image ID on both sides. Proceed.
+- `1` → mismatch. Run `python3 scripts/check_remote_image.py --fix`, which
+  recreates the **remote** container from the local image's exact digest
+  (never touches the local container, keeps the remote HOME), then proceed
+  if it exits `0`. Recreating replaces the remote container, so if the user
+  hasn't already asked for remote work in this session, tell them before
+  running `--fix`.
+- `2` → couldn't compare (no local podman reachable, no container on one
+  side). Say so in one line and fall back to local, same as Step 1.
+
+`distrobox/remote/check.sh` already runs this check first and stops on a
+mismatch; the step above matters when calling `run.sh` directly.
+
 ## Step 2 — What to offload vs. what must stay local
 
 | Safe to send remote | Must stay local |
@@ -95,6 +120,8 @@ wrapper and no `--dir` flag.
       host exists?
 - [ ] Used a short (~5s) `ssh -o BatchMode=yes` probe rather than assuming
       reachability, and didn't retry/block if it failed?
+- [ ] Ran `scripts/check_remote_image.py` and acted on its exit code —
+      never on my own reading of image tags/dates?
 - [ ] Only sent GUI-free, audio-free work (check/clippy/test/build) to the
       remote host — never `cargo tauri dev` or anything needing the
       screen/speakers?
