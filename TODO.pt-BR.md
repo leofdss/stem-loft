@@ -65,25 +65,6 @@ e a branch que a implementa.
 
 ## Backlog
 
-### TASK-001 — Session/State Manager e fiação do AppState
-- **Área:** Núcleo Rust — Session/State Manager
-- **Indicada para:** Agente de IA
-- **Skill(s):** `rust-domain-module`, `add-ipc-contract`
-- **Branch:** `feat/session-app-state`
-- **Depende de:** —
-
-Substituir o stub `session.rs` por um `AppState` real atrás de um único
-`Arc<Mutex<AppState>>` (ou no máximo um `Mutex` por módulo), e conectar os
-construtores de injeção manual dos módulos de domínio para os quais o
-Session roteia `Commands`.
-
-**Critérios de aceite:**
-- [ ] `AppState` corresponde à [nota de design do modelo de concorrência](docs/architecture.md#design-note-concurrency-model-for-shared-state) — sem channels, sem actor
-- [ ] `Session` guarda apenas "qual projeto está aberto"; todo handler de `Command` delega ao módulo dono daquele domínio, conforme [Session as a thin router](docs/architecture.md#design-note-session-as-a-thin-router)
-- [ ] Testes unitários cobrem o `Session` despachando um `Command` para o módulo correto (um módulo falso registra a chamada), sem retestar a lógica própria daquele módulo
-- [ ] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
-- [ ] Revisado pelo `rust-core-reviewer`
-
 ### TASK-002 — Project Persistence: carregar/salvar, escritas atômicas, schemaVersion
 - **Área:** Núcleo Rust — Project Persistence
 - **Indicada para:** Agente de IA
@@ -358,6 +339,25 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 ## In Progress
 
 ## Review
+
+### TASK-001 — Session/State Manager e fiação do AppState
+- **Área:** Núcleo Rust — Session/State Manager
+- **Indicada para:** Agente de IA
+- **Skill(s):** `rust-domain-module`, `add-ipc-contract`
+- **Branch:** `feat/session-app-state`
+- **Depende de:** —
+
+Substituir o stub `session.rs` por um `AppState` real atrás de um único
+`Arc<Mutex<AppState>>` (ou no máximo um `Mutex` por módulo), e conectar os
+construtores de injeção manual dos módulos de domínio para os quais o
+Session roteia `Commands`.
+
+**Critérios de aceite:**
+- [x] `AppState` corresponde à [nota de design do modelo de concorrência](docs/architecture.md#design-note-concurrency-model-for-shared-state) — sem channels, sem actor
+- [x] `Session` guarda apenas "qual projeto está aberto"; todo handler de `Command` delega ao módulo dono daquele domínio, conforme [Session as a thin router](docs/architecture.md#design-note-session-as-a-thin-router)
+- [x] Testes unitários cobrem o `Session` despachando um `Command` para o módulo correto (um módulo falso registra a chamada), sem retestar a lógica própria daquele módulo
+- [x] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
+- [x] Revisado pelo `rust-core-reviewer`
 
 ## Done
 

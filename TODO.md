@@ -58,24 +58,6 @@ implements it.
 
 ## Backlog
 
-### TASK-001 — Session/State Manager & AppState wiring
-- **Area:** Rust core — Session/State Manager
-- **Suitable for:** AI agent
-- **Skill(s):** `rust-domain-module`, `add-ipc-contract`
-- **Branch:** `feat/session-app-state`
-- **Depends on:** —
-
-Replace the `session.rs` stub with a real `AppState` behind a single
-`Arc<Mutex<AppState>>` (or at most one `Mutex` per module), and wire the
-manual-DI constructors for the domain modules Session routes `Commands` to.
-
-**Acceptance criteria:**
-- [ ] `AppState` matches [the concurrency-model design note](docs/architecture.md#design-note-concurrency-model-for-shared-state) — no channels, no actor
-- [ ] `Session` holds only "which project is open"; every `Command` handler delegates to the module owning that domain, per [Session as a thin router](docs/architecture.md#design-note-session-as-a-thin-router)
-- [ ] Unit tests cover `Session` dispatching a `Command` to the correct module (a fake module records the call), without re-testing that module's own logic
-- [ ] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
-- [ ] Reviewed by `rust-core-reviewer`
-
 ### TASK-002 — Project Persistence: load/save, atomic writes, schemaVersion
 - **Area:** Rust core — Project Persistence
 - **Suitable for:** AI agent
@@ -348,6 +330,24 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 ## In Progress
 
 ## Review
+
+### TASK-001 — Session/State Manager & AppState wiring
+- **Area:** Rust core — Session/State Manager
+- **Suitable for:** AI agent
+- **Skill(s):** `rust-domain-module`, `add-ipc-contract`
+- **Branch:** `feat/session-app-state`
+- **Depends on:** —
+
+Replace the `session.rs` stub with a real `AppState` behind a single
+`Arc<Mutex<AppState>>` (or at most one `Mutex` per module), and wire the
+manual-DI constructors for the domain modules Session routes `Commands` to.
+
+**Acceptance criteria:**
+- [x] `AppState` matches [the concurrency-model design note](docs/architecture.md#design-note-concurrency-model-for-shared-state) — no channels, no actor
+- [x] `Session` holds only "which project is open"; every `Command` handler delegates to the module owning that domain, per [Session as a thin router](docs/architecture.md#design-note-session-as-a-thin-router)
+- [x] Unit tests cover `Session` dispatching a `Command` to the correct module (a fake module records the call), without re-testing that module's own logic
+- [x] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
+- [x] Reviewed by `rust-core-reviewer`
 
 ## Done
 

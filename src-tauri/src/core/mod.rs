@@ -5,6 +5,7 @@
 //! see docs/architecture.md#design-note-patterns-familiar-to-people-coming-from-typescript
 //! and the `rust-domain-module` skill.
 
+pub mod app_state;
 pub mod audio_engine;
 pub mod loop_manager;
 pub mod persistence;
