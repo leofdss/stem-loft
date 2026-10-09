@@ -98,6 +98,16 @@ existentes formalizam:
    defina `STEMLOFT_REMOTE_HOST` (`usuario@host`) e `STEMLOFT_REMOTE_PATH`
    (onde o projeto fica nesse host, ex.: `~/Projects/stem-loft`) —
    ignorado pelo git, é por desenvolvedor, não compartilhado.
+4. `python3 scripts/check_remote_image.py --fix` a partir da sua máquina
+   local — faz o container `stemloft` remoto rodar **exatamente a mesma
+   imagem do seu container local** (baixada pelo digest, mantendo todas as
+   outras configurações do `distrobox.ini`). A referência é o container
+   local, não o `latest`, já que `latest` aponta para uma imagem diferente
+   em cada máquina assim que uma delas baixa um build mais novo. O
+   `check.sh` roda o mesmo script (sem `--fix`) antes de cada execução e
+   para se houver divergência, para que uma imagem remota desatualizada
+   não dê resultados diferentes dos que a sua máquina daria. Sempre que
+   recriar o seu container local, repita este passo.
 
 ## Uso
 

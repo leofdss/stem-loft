@@ -6,6 +6,19 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# The remote container must run the exact image the local one does --
+# decided by scripts/check_remote_image.py comparing podman image IDs, not
+# by anyone eyeballing tags/dates. Exit 1 (mismatch) stops here; exit 2
+# (couldn't compare, e.g. no local podman) only warns.
+set +e
+python3 "$DIR/../../scripts/check_remote_image.py"
+image_status=$?
+set -e
+if [[ $image_status -eq 1 ]]; then
+  echo "Remote image differs from local -- fix with: python3 scripts/check_remote_image.py --fix" >&2
+  exit 1
+fi
+
 "$DIR/sync.sh"
 
 echo

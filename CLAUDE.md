@@ -110,8 +110,11 @@ blocks a tool call before it runs.
   invariant-code-block parity between each `foo.md`/`foo.pt-BR.md` pair.
 - `check_npm_deps.py` — diffs `ui/package.json`'s dependencies against the
   hardcoded approved baseline (see the script's `ALLOWED` set).
+- `check_remote_image.py` — confirms the remote build host's `stemloft`
+  container runs the same image ID as the local one (`--fix` recreates the
+  remote one from the local digest). See `remote-build-offload`.
 
-All four are deterministic: same input, same output, regardless of who
+All five are deterministic: same input, same output, regardless of who
 runs them or how they read the surrounding prose — that's the point. If
 you find yourself re-deriving one of their checks by manually reading a
 diff, run the script instead.
