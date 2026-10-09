@@ -121,6 +121,24 @@ RUN curl -fsSL "https://update.code.visualstudio.com/latest/linux-x64/stable" -o
  && rm -f /tmp/vscode.tar.gz \
  && ln -s /opt/vscode/bin/code /usr/local/bin/code
 
+# The tarball ships no .desktop file, and `distrobox-export --app code`
+# only finds apps through /usr/share/applications ("cannot find any desktop
+# files" otherwise). Install a minimal one, plus the icon under a name
+# distrobox-export can resolve and copy to the host.
+RUN install -Dm644 /opt/vscode/resources/app/resources/linux/code.png /usr/share/pixmaps/vscode.png \
+ && printf '%s\n' \
+      '[Desktop Entry]' \
+      'Type=Application' \
+      'Name=Visual Studio Code' \
+      'Comment=Code Editing. Redefined.' \
+      'Exec=/usr/local/bin/code %F' \
+      'Icon=vscode' \
+      'Terminal=false' \
+      'Categories=Development;IDE;TextEditor;' \
+      'MimeType=text/plain;inode/directory;' \
+      'StartupWMClass=Code' \
+      > /usr/share/applications/code.desktop
+
 # The VS Code binary detects that it's running under WSL (common on this
 # project's host) and blocks on an interactive "Do you want to continue
 # anyway? [y/N]" prompt suggesting the Windows-side VS Code via Remote-WSL
