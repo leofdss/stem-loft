@@ -66,8 +66,6 @@ default choice.
 
 ## When you're done
 
-Run `cargo check` (the `PostToolUse` hook already does this automatically on
-every `.rs` edit and hands you back the compiler error to fix yourself —
-don't wait for the user to ask). If the hook doesn't fire (an old session, a
-watcher that hasn't reloaded), run it manually before reporting the task as
-done.
+Run `python3 scripts/check_changed.py <the files you touched>` (it runs
+`cargo check` for any `.rs` file; some AI tools run it automatically after
+every edit) and fix what it reports before calling the task done.

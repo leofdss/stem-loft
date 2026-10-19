@@ -17,7 +17,8 @@ REMOTE_PATH="${STEMLOFT_REMOTE_PATH%/}/"
 LOCAL_PATH="$(cd "$DIR/../.." && pwd)/"
 
 do_sync() {
-  rsync -az --delete \
+  # --mkpath: a fresh host (or a new STEMLOFT_REMOTE_PATH) has no target dir yet.
+  rsync -az --delete --mkpath \
     --exclude '.git' \
     --exclude 'target' \
     --exclude 'node_modules' \

@@ -14,12 +14,10 @@ by following the rules below in the order they appear.
 Don't skip steps. Don't invent content that isn't in the `.canvas` file: the
 final document must be traceable 1:1 to the canvas's nodes and edges.
 
-> **Naming note:** there's also an *agent* named `canvas-to-mermaid`
-> (`.claude/agents/canvas-to-mermaid.md`, same name, different namespace —
-> a skill and an agent don't collide). That agent's only job is to run this
-> skill end-to-end on a lightweight model; it isn't a separate or
-> alternative process. Invoking this skill directly (as any agent can)
-> follows the exact same steps below.
+> **Naming note:** some AI tools also expose a thin wrapper with the same
+> name (e.g. `.claude/agents/canvas-to-mermaid.md`) that runs this playbook
+> on a lightweight model. It isn't a separate process — this file is the
+> only source of the steps below, for any tool or a human.
 
 ## Use the script first — don't do the mechanical part by hand
 

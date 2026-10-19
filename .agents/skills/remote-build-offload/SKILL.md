@@ -97,7 +97,7 @@ distrobox/remote/run.sh --dir src-tauri cargo llvm-cov --summary-only
 distrobox/remote/run.sh --dir ui npm run build
 distrobox/remote/run.sh --dir ui npm run test -- --watch=false
 
-# Or the whole verification pass in one call (syncs first, then runs all four):
+# Or the whole verification pass in one call (syncs first, then runs scripts/verify.sh):
 distrobox/remote/check.sh
 ```
 
@@ -113,6 +113,15 @@ Without `REMOTE_AVAILABLE=1`, just run the equivalent command locally
 (`cd src-tauri && cargo test`, `cd ui && npm run build`, etc.) — same
 commands, same working directories, just no `distrobox/remote/run.sh`
 wrapper and no `--dir` flag.
+
+## Local models on the same host
+
+The host may also run a local-model server (Ollama on its GPU). That's a
+separate, equally optional service: probe it with
+`python3 scripts/local_llm.py --status` and treat exit status 3 exactly
+like an unreachable build host — fall back, don't report it as an error.
+What to hand it, and what never to, is in AGENTS.md ("Choosing who does
+the work").
 
 ## Checklist
 

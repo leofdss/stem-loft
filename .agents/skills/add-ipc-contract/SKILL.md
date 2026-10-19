@@ -99,5 +99,5 @@ Reread the diff and answer "no" to all of these, or go back and fix it:
 - [ ] Did `architecture.md`'s events table fall out of sync? → update it.
 
 If any answer is "yes," fix it before requesting review — don't leave for
-the `rust-core-reviewer`/`angular-shell-reviewer` agent something you can
+the `review-rust-core`/`review-angular-shell` review something you can
 solve yourself just by following this checklist.

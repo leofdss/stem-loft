@@ -97,10 +97,13 @@ já que nenhuma lógica de domínio do núcleo Rust está implementada ainda.
 
 - [`docs/architecture.md`](docs/architecture.md) — arquitetura completa: componentes, contrato de IPC, o formato `.cho`, fluxos de dados.
 - [`docs/project-name.md`](docs/project-name.md) — por que o projeto se chama StemLoft.
-- [`TODO.md`](TODO.md) — board de tarefas de implementação da v1
-  (Backlog/In Progress/Review/Done, critérios de aceite, branch por
-  tarefa); gere a visão em Kanban Mermaid dele com
-  [`scripts/todo_to_kanban.py`](scripts/todo_to_kanban.py).
+- [`TODO.md`](TODO.pt-BR.md) → [`openspec/`](openspec/README.pt-BR.md) — o
+  board de tarefas da v1: uma change do OpenSpec por tarefa (proposta,
+  critérios de aceite, o comportamento que ela adiciona), status em
+  `openspec/board.toml`, board visual em [`docs/kanban.html`](docs/kanban.html).
+- [`AGENTS.md`](AGENTS.md) — como trabalhar no repositório, igual para
+  pessoas e qualquer ferramenta de IA: regras, playbooks, verificações, quem
+  faz qual trabalho (em inglês, como toda a parte operacional).
 - [`distrobox/README.md`](distrobox/README.md) — ambiente de desenvolvimento Arch Linux reproduzível (Distrobox/Podman): o que tem na imagem (`Containerfile`) e como o container é criado a partir dela (`distrobox.ini`).
 
 ### Contribuindo
@@ -112,18 +115,23 @@ atualizar o documento junto com o código caso o alterem deliberadamente. O
 projeto é GPL-3.0-or-later (veja [Licença](#licença) abaixo), então tudo
 que for contribuído permanece aberto.
 
-Mensagens de commit devem seguir o [Conventional
+Leia o [`AGENTS.md`](AGENTS.md) antes da sua primeira mudança — ele é o
+guia único de contribuição, igual para pessoas e ferramentas de IA.
+Mensagens de commit seguem o [Conventional
 Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`,
-`refactor:`, `test:`, `chore:`, ...) — imposto a agentes de IA pelo hook
-`PreToolUse` `.claude/hooks/bash_guard.py`, e esperado também de
-contribuidores humanos.
+`refactor:`, `test:`, `chore:`, ...). Toda regra é um script que qualquer
+pessoa pode rodar, nunca algo que só uma ferramenta conhece:
 
-Este repositório também fornece agentes, skills e hooks do Claude Code
-(`.claude/`) que codificam essas regras para que um assistente de IA
-trabalhando no código as siga automaticamente — por exemplo, um hook
-`PostToolUse` incentiva o agente a manter este README sincronizado sempre
-que `docs/architecture.md`, `TODO.md`, ou a documentação do ambiente de
-dev mudam.
+```bash
+git config core.hooksPath .githooks   # once per clone: commit-msg + pre-commit checks
+scripts/verify.sh                     # the full pass CI runs on every PR
+```
+
+O repositório é deliberadamente **agnóstico a ferramentas de IA**: os
+playbooks são Markdown puro em `.agents/skills/`, as verificações ficam em
+`scripts/`, e pastas de ferramentas como `.claude/` só guardam adaptadores
+finos que apontam de volta para eles — use o editor ou assistente que
+preferir (veja "Agent-agnostic rule" no `AGENTS.md`).
 
 ## Licença
 
