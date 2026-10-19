@@ -1,40 +1,19 @@
 #!/usr/bin/env python3
-"""Convert TODO.md's task board into a Mermaid `kanban` diagram, or into the
-full standalone `docs/kanban.html` viewer.
+"""Generate the task board -- docs/kanban.html -- from OpenSpec.
 
-TODO.md (and its TODO.pt-BR.md sibling) structure the v1 implementation
-backlog as:
-
-    ## Backlog | In Progress | Review | Done
-    ### TASK-NNN — Title
-    - **Branch:** `feat/some-branch`
-    ...
-
-This script reads that structure and can emit either:
-
-  1. The raw Mermaid `kanban` block for one board file (default mode) --
-     nothing else in the file (intro prose, "How to use this board", the
-     Icebox section) is touched, since only `##` headings matching one of
-     the four known column names are treated as columns.
-  2. The complete `docs/kanban.html` page (`--html` mode) -- reads TODO.md
-     *and* its TODO.pt-BR.md counterpart, computes the per-column stats,
-     and writes the whole self-contained file (styles, the Mermaid CDN
-     script tag, both language boards, the EN/PT toggle). Nothing in this
-     mode is hand-assembled by whoever runs it -- the HTML is a pure
-     function of the two TODO files, so the output is identical no matter
-     who (human or agent) runs the command.
-
-Any AI agent editing TODO.md or TODO.pt-BR.md's task/column structure MUST
-re-run `--html` mode afterwards -- see the root CLAUDE.md and the
-`kanban_sync_reminder.py` hook, which nudges this automatically.
+Inputs (and nothing else, so the output is a pure function of the repo):
+  - openspec/changes/<id>/proposal.md and proposal.pt-BR.md -- the title
+    (`# TASK-NNN — Title`) in each language;
+  - openspec/board.toml -- each active change's status/branch;
+  - openspec/changes/archive/<date>-<id>/ -- archived changes are Done.
 
 Usage:
-    scripts/todo_to_kanban.py                    # reads TODO.md, prints the Mermaid block to stdout
-    scripts/todo_to_kanban.py TODO.pt-BR.md
-    scripts/todo_to_kanban.py -o docs/kanban.md   # write the Mermaid block to a file instead
+    python3 scripts/openspec_to_kanban.py               # (re)write docs/kanban.html
+    python3 scripts/openspec_to_kanban.py --check       # exit 1 if docs/kanban.html is stale
+    python3 scripts/openspec_to_kanban.py --mermaid     # print the EN Mermaid block
+    python3 scripts/openspec_to_kanban.py --mermaid --lang pt-BR
 
-    scripts/todo_to_kanban.py --html              # regenerate docs/kanban.html from TODO.md + TODO.pt-BR.md
-    scripts/todo_to_kanban.py --html -o out.html  # write the full page elsewhere
+Never hand-edit docs/kanban.html; change the inputs and re-run this.
 """
 
 from __future__ import annotations
@@ -42,18 +21,20 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tomllib
 from pathlib import Path
 from typing import Optional
 
-COLUMN_RE = re.compile(r"^##\s+(.+?)\s*$")
-TASK_RE = re.compile(r"^###\s+(\S+)\s+—\s+(.+?)\s*$")
-BRANCH_RE = re.compile(r"\*\*[^:*]*:\*\*\s*`([^`]+)`")
+TITLE_RE = re.compile(r"^#\s+(TASK-\d+)\s+—\s+(.+?)\s*$", re.MULTILINE)
+ARCHIVE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 
-# Fixes the column order in the diagram regardless of the order tasks
-# happen to appear in the source file.
+# Fixes the column order regardless of the order changes are found in.
 KNOWN_COLUMNS = ("Backlog", "In Progress", "Review", "Done")
+STATUS_TO_COLUMN = {"backlog": "Backlog", "in-progress": "In Progress", "review": "Review"}
 
-PT_BR_SUFFIX = ".pt-BR.md"
+ROOT = Path(__file__).resolve().parent.parent
+OPENSPEC = ROOT / "openspec"
+OUTPUT = ROOT / "docs" / "kanban.html"
 
 # Pinned exact version, per project policy of not trusting a floating "latest".
 # 10.9.x and earlier do NOT ship the `kanban` diagram type at all (verified by
@@ -67,48 +48,43 @@ Task = dict[str, Optional[str]]
 Columns = dict[str, list[Task]]
 
 
-def counterpart_path(path: Path) -> Optional[Path]:
-    """foo.md <-> foo.pt-BR.md, same convention as pt_br_sync_reminder.py."""
-    name = path.name
-    if name.endswith(PT_BR_SUFFIX):
-        return path.with_name(name[: -len(PT_BR_SUFFIX)] + ".md")
-    if name.endswith(".md"):
-        return path.with_name(name[: -len(".md")] + PT_BR_SUFFIX)
-    return None
+def read_title(change_dir: Path, lang: str) -> Optional[tuple[str, str]]:
+    name = "proposal.md" if lang == "en" else f"proposal.{lang}.md"
+    path = change_dir / name
+    if not path.is_file():
+        return None
+    match = TITLE_RE.search(path.read_text(encoding="utf-8"))
+    return (match.group(1), match.group(2)) if match else None
 
 
-def parse_board(text: str) -> Columns:
+def load_board() -> dict:
+    path = OPENSPEC / "board.toml"
+    return tomllib.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def task_number(task: Task) -> int:
+    match = re.search(r"(\d+)$", str(task["id"]))
+    return int(match.group(1)) if match else 0
+
+
+def parse_openspec(lang: str) -> Columns:
     columns: Columns = {name: [] for name in KNOWN_COLUMNS}
-    current_column: Optional[str] = None
-    current_task: Optional[Task] = None
-
-    for line in text.splitlines():
-        column_match = COLUMN_RE.match(line)
-        if column_match:
-            heading = column_match.group(1)
-            current_column = heading if heading in KNOWN_COLUMNS else None
-            current_task = None
+    board = load_board()
+    changes = OPENSPEC / "changes"
+    for change_dir in sorted(p for p in changes.iterdir() if p.is_dir() and p.name != "archive"):
+        title = read_title(change_dir, lang)
+        if title is None:
             continue
-
-        if current_column is None:
-            continue
-
-        task_match = TASK_RE.match(line)
-        if task_match:
-            current_task = {
-                "id": task_match.group(1),
-                "title": task_match.group(2),
-                "branch": None,
-            }
-            columns[current_column].append(current_task)
-            continue
-
-        stripped = line.lstrip()
-        if current_task is not None and current_task["branch"] is None and stripped.startswith("- **Branch"):
-            branch_match = BRANCH_RE.search(line)
-            if branch_match:
-                current_task["branch"] = branch_match.group(1)
-
+        meta = board.get(change_dir.name, {})
+        column = STATUS_TO_COLUMN.get(meta.get("status", "backlog"), "Backlog")
+        columns[column].append({"id": title[0], "title": title[1], "branch": meta.get("branch")})
+    archive = changes / "archive"
+    for change_dir in sorted(p for p in archive.iterdir() if p.is_dir()) if archive.is_dir() else []:
+        title = read_title(change_dir, lang)
+        if title is not None:
+            columns["Done"].append({"id": title[0], "title": title[1], "branch": None})
+    for tasks in columns.values():
+        tasks.sort(key=task_number)
     return columns
 
 
@@ -385,19 +361,19 @@ HTML_TEMPLATE = """<!doctype html>
 <main>
   <header class="page">
     <div class="titleblock">
-      <p class="eyebrow">TODO.md &rarr; Mermaid kanban</p>
+      <p class="eyebrow">OpenSpec &rarr; Mermaid kanban</p>
       <h1>StemLoft implementation board</h1>
       <p class="lede">
-        Generated by <code>scripts/todo_to_kanban.py --html</code> from the
-        current <code>##</code>/<code>###</code> structure of
-        <code>TODO.md</code> and <code>TODO.pt-BR.md</code> -- this file is
-        a pure function of those two, never hand-edited. Open it straight
-        from disk, no server needed.
+        Generated by <code>scripts/openspec_to_kanban.py</code> from the
+        OpenSpec changes under <code>openspec/changes/</code> and
+        <code>openspec/board.toml</code> -- this file is a pure function of
+        those, never hand-edited. Open it straight from disk, no server
+        needed.
       </p>
     </div>
     <div class="lang-toggle" role="group" aria-label="Board language">
-      <button type="button" id="btn-en" aria-pressed="true">EN &middot; TODO.md</button>
-      <button type="button" id="btn-pt" aria-pressed="false">PT-BR &middot; TODO.pt-BR.md</button>
+      <button type="button" id="btn-en" aria-pressed="true">EN &middot; proposal.md</button>
+      <button type="button" id="btn-pt" aria-pressed="false">PT-BR &middot; proposal.pt-BR.md</button>
     </div>
   </header>
 
@@ -410,7 +386,7 @@ HTML_TEMPLATE = """<!doctype html>
 
   <section class="board-panel">
     <div class="panel-head">
-      <span class="file">Source: <strong id="source-file">TODO.md</strong></span>
+      <span class="file">Source: <strong id="source-file">proposal.md</strong></span>
       <span class="cmd-hint">{task_count_hint}</span>
     </div>
     <div class="board-scroll">
@@ -432,14 +408,14 @@ HTML_TEMPLATE = """<!doctype html>
 
   <footer class="notes">
     <div class="col">
-      <b>Keep this in sync</b> &mdash; whenever <code>TODO.md</code> or
-      <code>TODO.pt-BR.md</code>'s task/column structure changes, regenerate
-      this file (the <code>kanban_sync_reminder.py</code> hook nudges this
-      automatically, but don't rely on remembering to check the reminder).
+      <b>Keep this in sync</b> &mdash; whenever a change is added, archived,
+      renamed, or moves column in <code>openspec/board.toml</code>, run
+      <code>python3 scripts/openspec_to_kanban.py</code>. CI and
+      <code>scripts/check_changed.py</code> fail when this page is stale.
     </div>
     <div class="col">
       <b>Regenerate</b>
-      <div class="cmd">python3 scripts/todo_to_kanban.py --html</div>
+      <div class="cmd">python3 scripts/openspec_to_kanban.py</div>
     </div>
   </footer>
 </main>
@@ -469,14 +445,14 @@ HTML_TEMPLATE = """<!doctype html>
       wrapPt.hidden = true;
       btnEn.setAttribute('aria-pressed', 'true');
       btnPt.setAttribute('aria-pressed', 'false');
-      sourceFile.textContent = 'TODO.md';
+      sourceFile.textContent = 'proposal.md';
     }}
     function showPt() {{
       wrapEn.hidden = true;
       wrapPt.hidden = false;
       btnEn.setAttribute('aria-pressed', 'false');
       btnPt.setAttribute('aria-pressed', 'true');
-      sourceFile.textContent = 'TODO.pt-BR.md';
+      sourceFile.textContent = 'proposal.pt-BR.md';
     }}
     btnEn.addEventListener('click', showEn);
     btnPt.addEventListener('click', showPt);
@@ -494,7 +470,7 @@ def build_html(columns_en: Columns, columns_pt: Columns) -> str:
         only_en = sorted(ids_en - ids_pt)
         only_pt = sorted(ids_pt - ids_en)
         sys.stderr.write(
-            "warning: TODO.md and TODO.pt-BR.md don't list the same tasks "
+            "warning: the EN and pt-BR proposals don't list the same tasks "
             f"(only in EN: {only_en or 'none'}; only in PT-BR: {only_pt or 'none'})\n"
         )
 
@@ -512,42 +488,24 @@ def build_html(columns_en: Columns, columns_pt: Columns) -> str:
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("input", nargs="?", default="TODO.md", type=Path, help="Board file to read (default: TODO.md)")
-    parser.add_argument("-o", "--output", type=Path, default=None, help="Write the result here instead of stdout")
-    parser.add_argument(
-        "--html",
-        action="store_true",
-        help="Emit the full docs/kanban.html page (reads INPUT plus its pt-BR sibling) instead of a Mermaid block",
-    )
+    parser.add_argument("--check", action="store_true", help="exit 1 if docs/kanban.html is out of date")
+    parser.add_argument("--mermaid", action="store_true", help="print the Mermaid block instead of writing the page")
+    parser.add_argument("--lang", default="en", choices=("en", "pt-BR"), help="language for --mermaid")
     args = parser.parse_args(argv)
 
-    if args.html:
-        pt_path = counterpart_path(args.input)
-        if args.input.name.endswith(PT_BR_SUFFIX):
-            en_path, pt_path = pt_path, args.input
-        else:
-            en_path = args.input
-        if pt_path is None or not en_path.is_file() or not pt_path.is_file():
-            sys.stderr.write(
-                f"error: --html needs both {en_path} and its pt-BR sibling ({pt_path}) to exist\n"
-            )
-            return 1
-
-        columns_en = parse_board(en_path.read_text(encoding="utf-8"))
-        columns_pt = parse_board(pt_path.read_text(encoding="utf-8"))
-        output_path = args.output or (en_path.parent / "docs" / "kanban.html")
-        output_path.write_text(build_html(columns_en, columns_pt), encoding="utf-8")
-        print(f"Wrote {output_path}")
+    if args.mermaid:
+        sys.stdout.write(f"```mermaid\n{to_mermaid(parse_openspec(args.lang))}```\n")
         return 0
 
-    text = args.input.read_text(encoding="utf-8")
-    columns = parse_board(text)
-    body = f"```mermaid\n{to_mermaid(columns)}```\n"
-
-    if args.output:
-        args.output.write_text(body, encoding="utf-8")
-    else:
-        sys.stdout.write(body)
+    html = build_html(parse_openspec("en"), parse_openspec("pt-BR"))
+    if args.check:
+        current = OUTPUT.read_text(encoding="utf-8") if OUTPUT.is_file() else ""
+        if current != html:
+            print("docs/kanban.html is stale -- run `python3 scripts/openspec_to_kanban.py`.")
+            return 1
+        return 0
+    OUTPUT.write_text(html, encoding="utf-8")
+    print(f"Wrote {OUTPUT.relative_to(ROOT)}")
     return 0
 
 
