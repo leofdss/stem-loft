@@ -50,7 +50,21 @@ def is_excluded(path: Path) -> bool:
     return any(marker in posix for marker in EXCLUDED_DIR_MARKERS)
 
 
+I18N_PT_SPECS = "i18n/pt-BR/specs"
+
+
 def counterpart_path(path: Path) -> Optional[Path]:
+    """foo.md <-> foo.pt-BR.md, plus one OpenSpec exception: inside a change,
+    OpenSpec rejects any extra file under specs/, so a delta spec's pt-BR
+    copy lives at <change>/i18n/pt-BR/specs/<cap>/spec.md instead
+    (openspec/README.md, "Languages")."""
+    posix = path.as_posix()
+    if f"/{I18N_PT_SPECS}/" in posix:
+        return Path(posix.replace(f"/{I18N_PT_SPECS}/", "/specs/", 1))
+    parts = path.parts
+    if "changes" in parts and "specs" in parts and path.name == "spec.md":
+        i = len(parts) - 1 - parts[::-1].index("specs")
+        return Path(*parts[:i], *I18N_PT_SPECS.split("/"), *parts[i + 1:])
     name = path.name
     if name.endswith(PT_BR_SUFFIX):
         return path.with_name(name[: -len(PT_BR_SUFFIX)] + ".md")
@@ -59,10 +73,33 @@ def counterpart_path(path: Path) -> Optional[Path]:
     return None
 
 
+def is_pt_br(path: Path) -> bool:
+    return path.name.endswith(PT_BR_SUFFIX) or f"/{I18N_PT_SPECS}/" in path.as_posix()
+
+
+# OpenSpec artifacts that must always have a pt-BR counterpart. Elsewhere a
+# doc without a sibling is just not translated (yet), not an error.
+OPENSPEC_TRANSLATED = ("proposal.md", "tasks.md", "design.md", "spec.md")
+
+
+def missing_translations(root: Path) -> list[str]:
+    problems = []
+    base = root / "openspec"
+    if not base.is_dir():
+        return problems
+    for path in sorted(base.rglob("*.md")):
+        if is_excluded(path) or is_pt_br(path) or path.name not in OPENSPEC_TRANSLATED:
+            continue
+        pt_path = counterpart_path(path)
+        if pt_path is None or not pt_path.is_file():
+            problems.append(f"{path}: missing pt-BR counterpart ({pt_path})")
+    return problems
+
+
 def discover_pairs(root: Path) -> list[tuple[Path, Path]]:
     pairs = []
     for path in sorted(root.rglob("*.md")):
-        if is_excluded(path) or path.name.endswith(PT_BR_SUFFIX):
+        if is_excluded(path) or is_pt_br(path):
             continue
         pt_path = counterpart_path(path)
         if pt_path is not None and pt_path.is_file():
@@ -122,6 +159,51 @@ def normalize_code(code: str) -> str:
     return "\n".join(lines).strip()
 
 
+# OpenSpec's structural vocabulary must stay in English in every language,
+# because its validator parses it (openspec/README.md, "Languages").
+OPENSPEC_FIXED_HEADINGS = {
+    "Why", "What Changes", "Capabilities", "New Capabilities", "Modified Capabilities",
+    "Impact", "Purpose", "Requirements", "ADDED Requirements", "MODIFIED Requirements",
+    "REMOVED Requirements", "RENAMED Requirements", "Context", "Goals / Non-Goals",
+    "Decisions", "Risks / Trade-offs", "Migration Plan", "Open Questions",
+}
+OPENSPEC_NAMED_PREFIXES = ("Requirement:", "Scenario:")
+NORMATIVE_RE = re.compile(r"\b(SHALL NOT|SHALL|MUST NOT|MUST)\b|\*\*(WHEN|THEN|AND|GIVEN)\*\*")
+
+
+def is_openspec_artifact(path: Path) -> bool:
+    return "openspec" in path.parts and path.name != "README.md" and not path.name.startswith("README.")
+
+
+def openspec_signature(text: str) -> list[str]:
+    """The parts of an OpenSpec artifact that must be byte-identical across
+    languages: fixed section headings verbatim, the `Requirement:`/`Scenario:`
+    prefixes (their names are translated), and the sequence of normative
+    keywords."""
+    sig = []
+    in_fence = False
+    for line in text.splitlines():
+        if FENCE_OPEN_RE.match(line) or FENCE_CLOSE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        heading = re.match(r"^(#{2,6})\s+(.*?)\s*$", line)
+        if heading:
+            level, title = heading.groups()
+            prefix = next((p for p in OPENSPEC_NAMED_PREFIXES if title.startswith(p)), None)
+            if prefix:
+                sig.append(f"{level} {prefix}")
+            elif title in OPENSPEC_FIXED_HEADINGS:
+                sig.append(f"{level} {title}")
+            elif re.match(r"^\d+\.", title):  # tasks.md group: number fixed, name translated
+                sig.append(f"{level} {title.split('.', 1)[0]}.")
+            else:
+                sig.append(f"{level} <translated>")
+        sig.extend(m.group(0) for m in NORMATIVE_RE.finditer(line))
+    return sig
+
+
 def compare_pair(en_path: Path, pt_path: Path) -> list[str]:
     problems = []
     en_text = en_path.read_text(encoding="utf-8")
@@ -134,6 +216,20 @@ def compare_pair(en_path: Path, pt_path: Path) -> list[str]:
             f"{en_path} vs {pt_path}: heading structure differs -- "
             f"EN levels {en_shape} vs PT-BR levels {pt_shape}"
         )
+
+    if is_openspec_artifact(en_path):
+        en_sig, pt_sig = openspec_signature(en_text), openspec_signature(pt_text)
+        if en_sig != pt_sig:
+            first = next(
+                (i for i, (a, b) in enumerate(zip(en_sig, pt_sig)) if a != b), min(len(en_sig), len(pt_sig))
+            )
+            en_at = en_sig[first] if first < len(en_sig) else "<end>"
+            pt_at = pt_sig[first] if first < len(pt_sig) else "<end>"
+            problems.append(
+                f"{en_path} vs {pt_path}: OpenSpec structure/keywords differ at item {first + 1} "
+                f"(EN {en_at!r} vs PT-BR {pt_at!r}) -- section headings, Requirement:/Scenario: "
+                "prefixes and SHALL/MUST/WHEN/THEN stay in English"
+            )
 
     en_blocks = [(lang, content) for lang, content in code_blocks(en_text) if lang in INVARIANT_LANGS]
     pt_blocks = [(lang, content) for lang, content in code_blocks(pt_text) if lang in INVARIANT_LANGS]
@@ -161,7 +257,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         pairs = []
         for arg in argv:
             path = Path(arg)
-            if path.name.endswith(PT_BR_SUFFIX):
+            if is_pt_br(path):
                 en_path, pt_path = counterpart_path(path), path
             else:
                 en_path, pt_path = path, counterpart_path(path)
@@ -172,7 +268,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     else:
         pairs = discover_pairs(Path("."))
 
-    all_problems: list[str] = []
+    all_problems: list[str] = [] if argv else missing_translations(Path("."))
     for en_path, pt_path in pairs:
         all_problems.extend(compare_pair(en_path, pt_path))
 

@@ -2,3 +2,6 @@
 # always-on machine. See distrobox/remote/README.md.
 export STEMLOFT_REMOTE_HOST=user@your-remote-host
 export STEMLOFT_REMOTE_PATH=~/Projects/stem-loft
+# Optional: the local-model server distrobox/remote/ollama/install.sh sets up
+# (it prints this line with the host's Tailscale IP).
+# export STEMLOFT_OLLAMA_URL=http://100.x.y.z:11434

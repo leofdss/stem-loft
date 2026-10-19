@@ -1,0 +1,37 @@
+# Podman Quadlet unit for the local-model server on the remote build host.
+# Installed by distrobox/remote/ollama/install.sh -- don't copy it by hand;
+# @BIND_ADDR@ is replaced with the host's Tailscale IPv4 (never 0.0.0.0).
+[Unit]
+Description=Ollama (ROCm) -- StemLoft local models
+After=network-online.target
+
+[Container]
+ContainerName=stemloft-ollama
+# Pinned exact tag, at least two weeks old when chosen. AMD GPU => ROCm build.
+Image=docker.io/ollama/ollama:0.35.0-rocm
+AddDevice=/dev/kfd
+AddDevice=/dev/dri
+GroupAdd=keep-groups
+# ROCm needs raw device access the default SELinux container label denies.
+SecurityLabelDisable=true
+Volume=stemloft-ollama-models:/root/.ollama
+PublishPort=@BIND_ADDR@:11434:11434
+# One model in VRAM at a time: the GPU has 8 GB, and swapping models is
+# cheaper than two half-offloaded ones fighting over it.
+Environment=OLLAMA_MAX_LOADED_MODELS=1
+Environment=OLLAMA_NUM_PARALLEL=1
+Environment=OLLAMA_KEEP_ALIVE=15m
+Environment=OLLAMA_FLASH_ATTENTION=1
+# q8 KV cache roughly halves context memory at no visible quality cost,
+# which is what lets a 7-8B model keep 16k context inside 8 GB.
+Environment=OLLAMA_KV_CACHE_TYPE=q8_0
+Environment=OLLAMA_CONTEXT_LENGTH=16384
+# Local only: never route a prompt to ollama.com cloud models.
+Environment=OLLAMA_NO_CLOUD=1
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

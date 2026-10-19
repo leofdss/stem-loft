@@ -3,10 +3,10 @@
 
 architecture.md#stack-and-platform's policy is that the Angular layer uses
 no third-party npm package beyond what Angular itself already brings.
-bash_guard.py enforces the common way that gets violated (`npm install
+scripts/guard_command.py blocks the common way that gets violated (`npm install
 <pkg>`), but it can't see a package added by hand-editing package.json and
 then running a bare `npm install`/`npm ci` (no positional package, which
-bash_guard deliberately allows since that's just "install what the
+guard_command.py deliberately allows since that's just "install what the
 lockfile already says"). This script closes that gap: it's a plain diff
 against a hardcoded baseline, not a judgment call.
 

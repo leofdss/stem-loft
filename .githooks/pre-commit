@@ -1,0 +1,5 @@
+#!/bin/sh
+# Enable once per clone: git config core.hooksPath .githooks
+# The same per-file checks an AI tool gets after an edit, run on what's
+# staged. CI runs the full pass anyway (scripts/verify.sh).
+exec python3 "$(git rev-parse --show-toplevel)/scripts/check_changed.py" --staged

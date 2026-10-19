@@ -92,10 +92,12 @@ Rust core's domain logic is implemented yet.
 
 - [`docs/architecture.md`](docs/architecture.md) — full architecture: components, IPC contract, the `.cho` format, data flows.
 - [`docs/project-name.md`](docs/project-name.md) — why the project is called StemLoft.
-- [`TODO.md`](TODO.md) — v1 implementation task board (Backlog/In
-  Progress/Review/Done, acceptance criteria, branch per task); regenerate a
-  Mermaid Kanban view of it with
-  [`scripts/todo_to_kanban.py`](scripts/todo_to_kanban.py).
+- [`TODO.md`](TODO.md) → [`openspec/`](openspec/README.md) — the v1 task
+  board: one OpenSpec change per task (proposal, acceptance criteria, the
+  behavior it adds), status in `openspec/board.toml`, visual board in
+  [`docs/kanban.html`](docs/kanban.html).
+- [`AGENTS.md`](AGENTS.md) — how to work on the repo, for people and any AI
+  coding tool alike: rules, playbooks, checks, who does which work.
 - [`distrobox/README.md`](distrobox/README.md) — reproducible Arch Linux dev environment (Distrobox/Podman): what's in the image (`Containerfile`) and how the container is created from it (`distrobox.ini`).
 
 ### Contributing
@@ -107,17 +109,21 @@ the doc alongside the code if they deliberately change it. The project is
 GPL-3.0-or-later (see [License](#license) below), so anything contributed
 stays open.
 
-Commit messages must follow [Conventional
-Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`,
-`refactor:`, `test:`, `chore:`, ...) — enforced for AI agents by the
-`PreToolUse` hook `.claude/hooks/bash_guard.py`, and expected of human
-contributors too.
+Read [`AGENTS.md`](AGENTS.md) before your first change — it's the single
+contributor guide, for people and AI coding tools alike. Commit messages
+follow [Conventional Commits](https://www.conventionalcommits.org/)
+(`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, ...). Every rule
+is a script anyone can run, never something only one tool knows:
 
-This repo also ships Claude Code agents, skills, and hooks
-(`.claude/`) that encode these rules so an AI assistant working on the code
-follows them automatically — for example, a `PostToolUse` hook nudges the
-agent to keep this README in sync whenever `docs/architecture.md`,
-`TODO.md`, or the dev-environment docs change.
+```bash
+git config core.hooksPath .githooks   # once per clone: commit-msg + pre-commit checks
+scripts/verify.sh                     # the full pass CI runs on every PR
+```
+
+The repo is deliberately **AI-tool-agnostic**: playbooks are plain Markdown
+in `.agents/skills/`, checks live in `scripts/`, and tool folders such as
+`.claude/` only hold thin adapters that point back to them — use whatever
+editor or assistant you like (see "Agent-agnostic rule" in `AGENTS.md`).
 
 ## License
 

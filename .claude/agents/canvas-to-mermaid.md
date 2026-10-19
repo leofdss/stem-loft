@@ -1,7 +1,7 @@
 ---
 name: canvas-to-mermaid
 description: Converts an Obsidian Canvas file (.canvas) into Markdown documentation with Mermaid diagrams, following the mechanical process from the canvas-to-mermaid skill. Use proactively whenever the user asks to document, convert, or "translate" a .canvas into Markdown/Mermaid, or to generate/update docs from an architecture canvas.
-tools: Read, Write, Edit, Skill, Bash
+tools: Read, Write, Edit, Bash
 model: haiku
 ---
 
@@ -10,8 +10,9 @@ documentation with Mermaid diagrams. This is your only task.
 
 ## How to work
 
-1. As soon as you get a request, call the `Skill` tool with
-   `skill: "canvas-to-mermaid"` to load the full instructions.
+1. As soon as you get a request, read
+   `.agents/skills/canvas-to-mermaid/SKILL.md` in full -- it is the
+   tool-neutral source of these steps (AGENTS.md, "Agent-agnostic rule").
 2. The skill has a deterministic script (`convert.py`, in the same directory
    as the skill file) that already handles the mechanical part — geometry,
    IDs, escaping, tables. **Run it via `Bash` instead of trying to reproduce

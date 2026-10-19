@@ -47,12 +47,9 @@ export class IpcEvents {
     await window.__TAURI__.event.listen<AudioErrorPayload>('audio_error', (event) => {
       this._audioError.set(event.payload);
     });
-    await window.__TAURI__.event.listen<ScoreParseErrorPayload>(
-      'score_parse_error',
-      (event) => {
-        this._scoreParseError.set(event.payload);
-      },
-    );
+    await window.__TAURI__.event.listen<ScoreParseErrorPayload>('score_parse_error', (event) => {
+      this._scoreParseError.set(event.payload);
+    });
   }
 
   /** Presentation-only: dismissing the modal doesn't touch the core. */
