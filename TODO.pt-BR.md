@@ -340,6 +340,8 @@ conforme [a nota de design](docs/architecture.md#design-note-crossfade-at-the-lo
 
 ## Review
 
+## Done
+
 ### TASK-001 — Session/State Manager e fiação do AppState
 - **Área:** Núcleo Rust — Session/State Manager
 - **Indicada para:** Agente de IA
@@ -358,8 +360,6 @@ Session roteia `Commands`.
 - [x] Testes unitários cobrem o `Session` despachando um `Command` para o módulo correto (um módulo falso registra a chamada), sem retestar a lógica própria daquele módulo
 - [x] `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
 - [x] Revisado pelo `rust-core-reviewer`
-
-## Done
 
 ## Icebox (pós-v1, ainda não quebrado em tarefas)
 
