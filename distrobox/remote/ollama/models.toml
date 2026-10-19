@@ -1,0 +1,41 @@
+# Which local model does which kind of work -- read by scripts/local_llm.py
+# and by distrobox/remote/ollama/install.sh (pulls every role with pull = true).
+#
+# Sized for the reference host: AMD RX 7600 (8 GB VRAM, ~7 GB free with a
+# desktop session), 32 GB RAM. Measured numbers are in
+# distrobox/remote/README.md ("Local models"). Change a role's model here,
+# re-run install.sh, and every caller follows -- nobody hardcodes a model.
+#
+# Only hand a local model work with a mechanical check behind it (a test,
+# cargo check, tsc, the bilingual parity checker...). See AGENTS.md,
+# "Choosing who does the work".
+
+[roles.quick]
+# Same model as `translate` on purpose: one model stays loaded in VRAM, and
+# the 4B options measured worse -- qwen3:4b (a thinking-only tag) ignores
+# think=false and rambles, qwen3:4b-instruct invented a `file:` commit type.
+model = "qwen3:8b"
+use = "Commit messages, PR summaries, classifying a diff, short rewrites."
+think = false
+pull = true
+
+[roles.code]
+# Same pass rate as qwen3-coder:30b on the measured Rust probe, at half the
+# latency and fully inside VRAM. Both wrote a wrong *test expectation* --
+# never let one model write both the code and the test that judges it.
+model = "qwen2.5-coder:7b"
+use = "Mechanical code edits and test scaffolding gated by cargo check / tsc / tests."
+think = false
+pull = true
+
+[roles.translate]
+model = "qwen3:8b"
+use = "EN <-> pt-BR drafts of docs and OpenSpec artifacts, checked by check_bilingual_parity.py and reviewed by a human."
+think = false
+pull = true
+
+[roles.heavy]
+model = "qwen3-coder:30b"
+use = "Longer agentic sessions over a bigger context (e.g. driven by an agent CLI pointed at this server). MoE with 3B active: ~2/3 of it lives in RAM yet still generates ~27 tok/s; prompt processing is ~3x slower than `code`."
+think = false
+pull = true

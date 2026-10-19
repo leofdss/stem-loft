@@ -34,8 +34,8 @@ A typical loop:
 
 1. Edit code locally, as usual.
 2. Before firing up the real app, run `distrobox/remote/check.sh`. It
-   pushes your working tree to the remote host and runs `cargo
-   check`/`clippy`/`test` plus `npm run build`/`test` there — a wrong type
+   pushes your working tree to the remote host and runs
+   `scripts/verify.sh` there — the same full pass CI runs — so a wrong type
    or a broken test (Rust or Angular) shows up in well under a minute,
    without your machine compiling `webkit2gtk` locally just to find out.
 3. Once that's clean (or whenever you want to actually see the change),
@@ -118,7 +118,7 @@ distrobox/remote/run.sh --dir src-tauri cargo llvm-cov --summary-only
 distrobox/remote/run.sh --dir ui npm run build
 distrobox/remote/run.sh --dir ui npm run test -- --watch=false
 
-distrobox/remote/check.sh             # sync + check + clippy + test + build + Angular tests, all in one
+distrobox/remote/check.sh             # sync + scripts/verify.sh (the full CI pass), all in one
 ```
 
 `sync.sh` excludes `.git`, `target/`, `node_modules/`, `dist/`, `.angular/`
@@ -127,6 +127,52 @@ and never round-trip back by default (nothing here copies `target/` back,
 unlike `cargo-remote` — the point is fast feedback on errors/warnings/test
 results, not running the remote-built binary locally, since the ALSA/window
 handles it'd need aren't there).
+
+## Local models
+
+The same host can serve local language models on its GPU, so any
+contributor or AI agent can hand a mechanically-checked chore to a model
+that costs nothing per call and never leaves the tailnet. It runs
+[Ollama](https://ollama.com/) as a rootless Podman Quadlet service
+(`stemloft-ollama`), API bound to the host's Tailscale IP only, cloud
+models disabled.
+
+```bash
+distrobox/remote/ollama/install.sh        # install/update the service + pull the models
+python3 scripts/local_llm.py --status     # is it up, which models are pulled/loaded
+```
+
+Then add the URL `install.sh` prints to your `host.local`
+(`export STEMLOFT_OLLAMA_URL=http://<tailscale-ip>:11434`). Callers ask for
+a **role**, never a model — roles live in
+[`ollama/models.toml`](ollama/models.toml):
+
+| Role | Model | Measured on RX 7600 (8 GB), 16k context | Use it for |
+|---|---|---|---|
+| `quick` | `qwen3:8b` | 5.8 GB, all in VRAM · 36 tok/s | commit messages, PR summaries, classifying a diff |
+| `translate` | `qwen3:8b` | same model, no reload | pt-BR drafts via `scripts/translate_md.py` |
+| `code` | `qwen2.5-coder:7b` | 4.8 GB, all in VRAM · 45 tok/s | mechanical edits gated by `cargo check`/`tsc`/tests |
+| `heavy` | `qwen3-coder:30b` | 6.7 of 18.3 GB in VRAM, rest in RAM · 27 tok/s | longer agentic sessions over bigger contexts |
+
+What the measurements also showed, and the scripts now enforce:
+
+- **Prompts don't keep structure intact.** Told to leave headings and
+  `SHALL`/`MUST` in English, `qwen3:8b` still translated `## Purpose` and
+  `### Requirement:`. `scripts/translate_md.py` therefore never sends
+  structure to the model — only prose segments, as JSON with a schema — and
+  rejects a segment whose code spans or keywords changed;
+  `check_bilingual_parity.py` fails if structure drifts anyway.
+- **Thinking-only tags ignore `think=false`.** `qwen3:4b` (a thinking-only
+  variant) rambled through a one-line task; `qwen3:4b-instruct` was fast
+  but invented a `file:` commit type. Both were dropped.
+- **Never let one model write the code *and* its test.** On a Rust probe
+  judged by `cargo test`, both coder models got the implementation right
+  and one test expectation wrong — exactly the case where a model would
+  "fix" correct code to match its own bad test.
+
+Output from a local model is a draft: a script or a person checks it
+before it lands (see "Choosing who does the work" in
+[`AGENTS.md`](../../AGENTS.md)).
 
 ## What this deliberately doesn't do
 

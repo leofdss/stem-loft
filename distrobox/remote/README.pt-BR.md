@@ -34,8 +34,8 @@ Um loop típico:
 
 1. Edite código localmente, como de costume.
 2. Antes de subir o app de verdade, rode `distrobox/remote/check.sh`. Ele
-   envia sua árvore de trabalho para o host remoto e roda `cargo
-   check`/`clippy`/`test` mais `npm run build`/`test` lá — um tipo errado ou
+   envia sua árvore de trabalho para o host remoto e roda o
+   `scripts/verify.sh` lá — o mesmo passe completo do CI — então um tipo errado ou
    um teste quebrado (Rust ou Angular) aparece em bem menos de um minuto,
    sem sua máquina compilar `webkit2gtk` localmente só para descobrir isso.
 3. Quando estiver tudo limpo (ou sempre que quiser realmente ver a
@@ -122,7 +122,7 @@ distrobox/remote/run.sh --dir src-tauri cargo llvm-cov --summary-only
 distrobox/remote/run.sh --dir ui npm run build
 distrobox/remote/run.sh --dir ui npm run test -- --watch=false
 
-distrobox/remote/check.sh             # sync + check + clippy + test + build + testes do Angular, tudo de uma vez
+distrobox/remote/check.sh             # sync + scripts/verify.sh (o passe completo do CI), tudo de uma vez
 ```
 
 `sync.sh` exclui `.git`, `target/`, `node_modules/`, `dist/`, `.angular/`
@@ -132,6 +132,54 @@ remotamente e nunca voltam automaticamente por padrão (nada aqui copia o
 rápido sobre erros/avisos/resultados de teste, não rodar localmente o
 binário construído remotamente, já que os handles de ALSA/janela que ele
 precisaria não estão lá).
+
+## Modelos locais
+
+O mesmo host pode servir modelos de linguagem locais na GPU dele, para que
+qualquer pessoa ou agente de IA possa passar uma tarefa verificável
+mecanicamente para um modelo que não custa nada por chamada e nunca sai da
+tailnet. Ele roda o [Ollama](https://ollama.com/) como um serviço Podman
+Quadlet sem root (`stemloft-ollama`), com a API presa só ao IP do Tailscale
+do host e os modelos em nuvem desligados.
+
+```bash
+distrobox/remote/ollama/install.sh        # install/update the service + pull the models
+python3 scripts/local_llm.py --status     # is it up, which models are pulled/loaded
+```
+
+Depois, adicione ao seu `host.local` a URL que o `install.sh` imprime
+(`export STEMLOFT_OLLAMA_URL=http://<ip-do-tailscale>:11434`). Quem chama
+pede um **papel**, nunca um modelo — os papéis ficam em
+[`ollama/models.toml`](ollama/models.toml):
+
+| Papel | Modelo | Medido na RX 7600 (8 GB), contexto de 16k | Use para |
+|---|---|---|---|
+| `quick` | `qwen3:8b` | 5,8 GB, todo na VRAM · 36 tok/s | mensagens de commit, resumos de PR, classificar um diff |
+| `translate` | `qwen3:8b` | o mesmo modelo, sem recarregar | rascunhos em pt-BR via `scripts/translate_md.py` |
+| `code` | `qwen2.5-coder:7b` | 4,8 GB, todo na VRAM · 45 tok/s | edições mecânicas validadas por `cargo check`/`tsc`/testes |
+| `heavy` | `qwen3-coder:30b` | 6,7 de 18,3 GB na VRAM, o resto na RAM · 27 tok/s | sessões agênticas mais longas, com contexto maior |
+
+O que as medições também mostraram, e os scripts agora garantem:
+
+- **Prompt não preserva estrutura.** Instruído a manter títulos e
+  `SHALL`/`MUST` em inglês, o `qwen3:8b` ainda traduziu `## Purpose` e
+  `### Requirement:`. Por isso o `scripts/translate_md.py` nunca manda a
+  estrutura para o modelo — só trechos de prosa, em JSON com schema — e
+  rejeita um trecho cujo código inline ou palavras-chave mudaram; o
+  `check_bilingual_parity.py` falha se a estrutura divergir mesmo assim.
+- **Tags só de raciocínio ignoram `think=false`.** O `qwen3:4b` (uma
+  variante que sempre raciocina) divagou numa tarefa de uma linha; o
+  `qwen3:4b-instruct` foi rápido, mas inventou um tipo de commit `file:`.
+  Os dois foram descartados.
+- **Nunca deixe o mesmo modelo escrever o código *e* o teste dele.** Num
+  teste em Rust julgado pelo `cargo test`, os dois modelos de código
+  acertaram a implementação e erraram o valor esperado de um teste —
+  exatamente o caso em que um modelo "corrigiria" código certo para bater
+  com o próprio teste errado.
+
+A saída de um modelo local é um rascunho: um script ou uma pessoa confere
+antes de ela entrar (veja "Choosing who does the work" no
+[`AGENTS.md`](../../AGENTS.md)).
 
 ## O que isso deliberadamente não faz
 
