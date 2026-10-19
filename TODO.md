@@ -331,6 +331,8 @@ Short crossfade (a few ms) at the loop boundary instead of a hard cut, per
 
 ## Review
 
+## Done
+
 ### TASK-001 — Session/State Manager & AppState wiring
 - **Area:** Rust core — Session/State Manager
 - **Suitable for:** AI agent
@@ -348,8 +350,6 @@ manual-DI constructors for the domain modules Session routes `Commands` to.
 - [x] Unit tests cover `Session` dispatching a `Command` to the correct module (a fake module records the call), without re-testing that module's own logic
 - [x] `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
 - [x] Reviewed by `rust-core-reviewer`
-
-## Done
 
 ## Icebox (post-v1, not yet broken into tasks)
 
