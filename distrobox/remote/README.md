@@ -130,6 +130,12 @@ handles it'd need aren't there).
 
 ## Local models
 
+> **Experimental — not part of the default workflow.** On a GPU with
+> ~8 GB of VRAM, the models that fit didn't finish real tasks even inside
+> `scripts/llm_task.py`, so delegation goes to a smaller hosted model
+> instead (AGENTS.md, "Choosing who does the work"). Everything below is
+> kept working for retesting on bigger hardware.
+
 The same host can serve local language models on its GPU, so any
 contributor or AI agent can hand a mechanically-checked chore to a model
 that costs nothing per call, has no usage quota, and needs no account with

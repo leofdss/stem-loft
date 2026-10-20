@@ -13,5 +13,6 @@ only adds how Claude Code is wired to it — never a rule of its own (see
   runs `scripts/guard_command.py` before every Bash call.
 - Subagents (`.claude/agents/`): `rust-core-reviewer` and
   `angular-shell-reviewer` apply the `review-rust-core` /
-  `review-angular-shell` playbooks; `canvas-to-mermaid` runs that playbook
-  on a lighter model.
+  `review-angular-shell` playbooks; `implementer` (Haiku) is the cheaper
+  implementer of the `implement-against-frozen-tests` playbook;
+  `canvas-to-mermaid` runs that playbook on a lighter model.

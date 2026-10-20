@@ -135,6 +135,12 @@ precisaria não estão lá).
 
 ## Modelos locais
 
+> **Experimental — fora do fluxo padrão.** Numa GPU com ~8 GB de VRAM, os
+> modelos que cabem não concluíram tarefas reais nem dentro do
+> `scripts/llm_task.py`, então a delegação vai para um modelo hospedado
+> menor (AGENTS.md, "Choosing who does the work"). Tudo abaixo continua
+> funcionando para um novo teste com um hardware maior.
+
 O mesmo host pode servir modelos de linguagem locais na GPU dele, para que
 qualquer pessoa ou agente de IA possa passar uma tarefa verificável
 mecanicamente para um modelo que não custa nada por chamada, não tem cota

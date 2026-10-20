@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import check_agent_agnostic  # noqa: E402
 import check_bilingual_parity as parity  # noqa: E402
+import check_frozen  # noqa: E402
 import local_llm  # noqa: E402
 import openspec_archive  # noqa: E402
 import llm_task  # noqa: E402
@@ -297,6 +298,51 @@ class LlmTaskTests(unittest.TestCase):
         self.assertIn("after iteration 1 (FAILED)", prompt)
         self.assertIn("error: boom", prompt)
         self.assertLess(prompt.index("# Read-only context: ctx.md"), prompt.index("# YOUR SECTION"))
+
+
+class CheckFrozenTests(unittest.TestCase):
+    def repo_with_contract(self, root: Path) -> Path:
+        import subprocess
+        def git(*args):
+            subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+        git("init", "-q")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        git("config", "commit.gpgsign", "false")
+        git("config", "core.hooksPath", "/dev/null")
+        f = root / "lib.rs"
+        f.write_text("pub fn a() { todo!() }\n\n#[cfg(test)]\nmod tests { #[test] fn t() { assert_eq!(1, 1); } }\n")
+        git("add", "lib.rs")
+        git("commit", "-q", "-m", "test: contract")
+        return f
+
+    def test_implementing_the_section_keeps_the_frozen_part_ok(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.repo_with_contract(Path(tmp))
+            f.write_text(f.read_text().replace("todo!()", "1;"))
+            code, _ = check_frozen.compare(f, "#[cfg(test)]", "HEAD")
+            self.assertEqual(code, 0)
+
+    def test_editing_a_test_is_caught_with_a_diff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.repo_with_contract(Path(tmp))
+            f.write_text(f.read_text().replace("assert_eq!(1, 1)", "assert!(true)"))
+            code, message = check_frozen.compare(f, "#[cfg(test)]", "HEAD")
+            self.assertEqual(code, 1)
+            self.assertIn("-mod tests { #[test] fn t() { assert_eq!(1, 1); } }", message)
+
+    def test_deleting_the_marker_is_not_a_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.repo_with_contract(Path(tmp))
+            f.write_text("pub fn a() {}\n")
+            self.assertEqual(check_frozen.compare(f, "#[cfg(test)]", "HEAD")[0], 2)
+
+    def test_an_uncommitted_contract_cant_be_checked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.repo_with_contract(Path(tmp))
+            g = Path(tmp) / "new.rs"
+            g.write_text("#[cfg(test)]\n")
+            self.assertEqual(check_frozen.compare(g, "#[cfg(test)]", "HEAD")[0], 2)
 
 
 if __name__ == "__main__":
