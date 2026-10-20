@@ -40,7 +40,8 @@ build_down() { remote 'podman stop -t 10 stemloft >/dev/null 2>&1' || true; }
 status() {
   remote 'printf "ollama: %s\n" "$(systemctl --user is-active stemloft-ollama.service 2>/dev/null)";
           printf "build:  %s\n" "$(podman inspect -f "{{.State.Status}}" stemloft 2>/dev/null || echo missing)";
-          printf "gpu vram used: %s MiB\n" "$(( $(cat /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null | head -1) / 1048576 ))"'
+          used=$(cat /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null | head -1);
+          printf "gpu vram used: %s MiB\n" "$(( ${used:-0} / 1048576 ))"'
 }
 
 case "$action:$target" in

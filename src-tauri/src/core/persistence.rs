@@ -181,6 +181,10 @@ impl ProjectPersistence {
         }
     }
 
+    /// Reads `schemaVersion` before anything else: the same version loads
+    /// directly, a lower one runs every registered migration in order, a
+    /// higher one is [`LoadError::NewerVersion`]. Never writes the file and
+    /// never returns a partial project.
     pub fn load_project(&self, path: &Path) -> Result<Project, LoadError> {
         let contents = fs::read_to_string(path).map_err(LoadError::Io)?;
         let value: serde_json::Value = serde_json::from_str(&contents)
@@ -217,24 +221,31 @@ impl ProjectPersistence {
             .map_err(|e| LoadError::Malformed(format!("project file has wrong shape: {e}")))
     }
 
+    /// Writes `project` now, through [`Self::atomic_write`]. Prefer
+    /// [`Self::checkpoint`] for state changes; this is the primitive under it.
     pub fn save_project(&self, path: &Path, project: &Project) -> io::Result<()> {
         let contents = serde_json::to_vec_pretty(project)
             .map_err(|e| io::Error::other(format!("failed to serialize project: {e}")))?;
         self.atomic_write(path, &contents)
     }
 
+    /// Records that persisted state changed at `now`. Cheap: no I/O.
     pub fn mark_dirty(&self, now: Instant) {
         self.scheduler().mark_dirty(now);
     }
 
-    /// The scheduler holds two plain fields that are valid after any panic,
-    /// so a poisoned lock is safe to keep using.
+    /// The scheduler holds only plain values that stay valid after any
+    /// panic, so a poisoned lock is safe to keep using.
     fn scheduler(&self) -> MutexGuard<'_, SaveScheduler> {
         self.scheduler
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// Writes `project` if it's dirty and the debounce has elapsed (or
+    /// `definitive` is set, e.g. pause/close); `Ok(true)` when it wrote. A
+    /// failed write stays dirty for the next try. Callers pass a snapshot
+    /// taken outside any lock of their own.
     pub fn checkpoint(
         &self,
         path: &Path,
@@ -252,6 +263,11 @@ impl ProjectPersistence {
         Ok(true)
     }
 
+    /// Writes `contents` to `path` atomically: a unique temp file in the same
+    /// directory, synced, then `rename`d into place. A crash or error at any
+    /// point leaves the previous file intact -- worst case the write in
+    /// progress is lost, never an existing file. Every write this module
+    /// makes goes through here (the `atomic-persistence` playbook).
     pub fn atomic_write(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
         self.atomic_write_with_hook(path, contents, || Ok(()))
     }
