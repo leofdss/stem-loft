@@ -13,6 +13,7 @@ import check_agent_agnostic  # noqa: E402
 import check_bilingual_parity as parity  # noqa: E402
 import local_llm  # noqa: E402
 import openspec_archive  # noqa: E402
+import llm_task  # noqa: E402
 import translate_md  # noqa: E402
 
 
@@ -212,6 +213,90 @@ class TranslateMdTests(unittest.TestCase):
     def test_thinking_preamble_is_stripped(self):
         self.assertEqual(local_llm.strip_thinking("reasoning...</think>\n\nfeat: x"), "feat: x")
         self.assertEqual(local_llm.strip_thinking("feat: x"), "feat: x")
+
+
+class LlmTaskTests(unittest.TestCase):
+    FILE = "pub fn a() {}\n\n#[cfg(test)]\nmod tests { #[test] fn t() {} }\n"
+
+    def test_split_freezes_everything_from_the_marker(self):
+        section, frozen = llm_task.split(self.FILE, "#[cfg(test)]")
+        self.assertEqual(section, "pub fn a() {}\n\n")
+        self.assertTrue(frozen.startswith("#[cfg(test)]"))
+        self.assertEqual(section + frozen, self.FILE)
+
+    def test_missing_marker_is_an_error_not_a_silent_full_edit(self):
+        with self.assertRaises(ValueError):
+            llm_task.split(self.FILE, "#[cfg(nope)]")
+
+    def test_reply_section_is_the_largest_fenced_block(self):
+        reply = "Here:\n```rust\nuse x;\n```\nand the file:\n```rust\npub fn a() { 1 }\npub fn b() {}\n```\n"
+        self.assertEqual(llm_task.extract_section(reply), "pub fn a() { 1 }\npub fn b() {}\n\n")
+
+    def test_echoed_line_numbers_are_stripped(self):
+        reply = "```rust\n 9 | fn a() {\n10 |     1\n11 | }\n```"
+        self.assertEqual(llm_task.extract_section(reply), "fn a() {\n    1\n}\n\n")
+
+    def test_code_that_merely_contains_pipes_is_left_alone(self):
+        reply = "```rust\nlet x = a | b;\nfn f() {}\n```"
+        self.assertEqual(llm_task.extract_section(reply), "let x = a | b;\nfn f() {}\n\n")
+
+    def test_a_hung_check_is_killed_and_explained(self):
+        ok, out, seconds = llm_task.run_check("sleep 30", 1)
+        self.assertFalse(ok)
+        self.assertIn("HUNG", out)
+        self.assertLess(seconds, 10)
+
+    def test_reply_without_a_block_is_rejected(self):
+        self.assertIsNone(llm_task.extract_section("I would change the function a."))
+
+    def test_feedback_keeps_errors_and_drops_warnings(self):
+        out = (
+            "   Compiling stemloft v0.1.0\n"
+            "warning: unused variable: `x`\n --> src/a.rs:1:1\n\n"
+            "error[E0425]: cannot find value `y`\n --> src/a.rs:2:5\n\n"
+            "test result: FAILED. 1 passed; 1 failed\n"
+        )
+        fb = llm_task.trim_feedback(out)
+        self.assertIn("error[E0425]", fb)
+        self.assertIn("test result: FAILED", fb)
+        self.assertNotIn("unused variable", fb)
+        self.assertNotIn("Compiling", fb)
+
+    def test_feedback_is_capped(self):
+        fb = llm_task.trim_feedback("\n".join(f"error: e{i}" for i in range(500)))
+        self.assertLessEqual(len(fb.splitlines()), llm_task.MAX_FEEDBACK_LINES + 1)
+        self.assertIn("more lines trimmed", fb)
+
+    def test_numbered_lines_match_file_line_numbers(self):
+        self.assertEqual(llm_task.numbered("a\nb", 9), " 9 | a\n10 | b")
+
+    def test_excerpts_say_whose_line_failed(self):
+        section = "fn a() {\n    x?\n}\n\n"            # lines 1-4
+        frozen = "#[cfg(test)]\nmod t {\n    assert!(msg.contains(\"exact\"));\n}\n"  # line 5 on
+        out = (
+            "error[E0277]: `?` couldn't convert\n  --> src/core/f.rs:2:5\n"
+            "thread 't' panicked at src/core/f.rs:7:5:\nnope\n"
+            "  --> src/other.rs:2:1\n"
+        )
+        ex = llm_task.excerpts(out, "src-tauri/src/core/f.rs", section, frozen)
+        self.assertIn("Line 2 is in your section", ex)
+        self.assertIn("2 |     x?", ex)
+        self.assertIn("Line 7 is in FROZEN part", ex)
+        self.assertIn('assert!(msg.contains(\"exact\"))'.replace('\\"', '"'), ex)
+        self.assertEqual(ex.count("Line "), 2, "locations in other files are ignored")
+
+    def test_stalled_note_reaches_the_prompt(self):
+        prompt = llm_task.build_prompt("T", [], "f.rs", "", "fn a(){}", "error: same", 3, "Same as before.")
+        self.assertIn("# STALLED\n\nSame as before.", prompt)
+        self.assertIn("1 | fn a(){}", prompt)
+
+    def test_prompt_shows_the_frozen_part_read_only_and_the_last_failure(self):
+        prompt = llm_task.build_prompt("Do X.", [("ctx.md", "C")], "f.rs", "#[cfg(test)] frozen", "fn a(){}", "error: boom", 2)
+        self.assertIn("# FROZEN part of f.rs", prompt)
+        self.assertIn("#[cfg(test)] frozen", prompt)
+        self.assertIn("after iteration 1 (FAILED)", prompt)
+        self.assertIn("error: boom", prompt)
+        self.assertLess(prompt.index("# Read-only context: ctx.md"), prompt.index("# YOUR SECTION"))
 
 
 if __name__ == "__main__":

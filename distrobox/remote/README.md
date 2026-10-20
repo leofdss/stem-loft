@@ -135,44 +135,57 @@ contributor or AI agent can hand a mechanically-checked chore to a model
 that costs nothing per call and never leaves the tailnet. It runs
 [Ollama](https://ollama.com/) as a rootless Podman Quadlet service
 (`stemloft-ollama`), API bound to the host's Tailscale IP only, cloud
-models disabled.
+models disabled. The GPU is detected by Ollama's ROCm build (AMD); for
+another vendor, change the image tag and devices in
+[`ollama/ollama.container.in`](ollama/ollama.container.in).
 
 ```bash
 distrobox/remote/ollama/install.sh        # install/update the service + pull the models
+distrobox/remote/power.sh up ollama       # start it for a work session
 python3 scripts/local_llm.py --status     # is it up, which models are pulled/loaded
+distrobox/remote/power.sh down            # done: stop ollama and the build container
 ```
+
+**Nothing runs while nobody works.** The build host is usually someone's
+own machine, used for other things too, so the service never starts at
+boot (`ollama.container.in` has no `[Install]` section), unloads an idle
+model after 5 minutes, and `check.sh` stops the build container when its
+pass ends. Whoever finishes a work session — a person or an AI agent —
+runs `distrobox/remote/power.sh down`; `power.sh status` shows what's
+running and how much VRAM is in use.
 
 Then add the URL `install.sh` prints to your `host.local`
 (`export STEMLOFT_OLLAMA_URL=http://<tailscale-ip>:11434`). Callers ask for
 a **role**, never a model — roles live in
-[`ollama/models.toml`](ollama/models.toml):
+[`ollama/models.toml`](ollama/models.toml), whose defaults fit a GPU with
+about 8 GB of VRAM (edit it for yours, re-run `install.sh`):
 
-| Role | Model | Measured on RX 7600 (8 GB), 16k context | Use it for |
-|---|---|---|---|
-| `quick` | `qwen3:8b` | 5.8 GB, all in VRAM · 36 tok/s | commit messages, PR summaries, classifying a diff |
-| `translate` | `qwen3:8b` | same model, no reload | pt-BR drafts via `scripts/translate_md.py` |
-| `code` | `qwen2.5-coder:7b` | 4.8 GB, all in VRAM · 45 tok/s | mechanical edits gated by `cargo check`/`tsc`/tests |
-| `heavy` | `qwen3-coder:30b` | 6.7 of 18.3 GB in VRAM, rest in RAM · 27 tok/s | longer agentic sessions over bigger contexts |
+| Role | Default model | Use it for |
+|---|---|---|
+| `quick` | `qwen3:8b` | commit messages, PR summaries, classifying a diff |
+| `translate` | `qwen3:8b` (same model, no reload) | pt-BR drafts via `scripts/translate_md.py` |
+| `code` | `qwen2.5-coder:7b` | mechanical edits gated by `cargo check`/`tsc`/tests, e.g. through `scripts/llm_task.py` |
+| `heavy` | `qwen3-coder:30b` | longer sessions over bigger contexts (a MoE that may spill from VRAM into RAM) |
 
-What the measurements also showed, and the scripts now enforce:
+Design rules the scripts enforce, because a model won't reliably follow
+them when asked:
 
-- **Prompts don't keep structure intact.** Told to leave headings and
-  `SHALL`/`MUST` in English, `qwen3:8b` still translated `## Purpose` and
-  `### Requirement:`. `scripts/translate_md.py` therefore never sends
-  structure to the model — only prose segments, as JSON with a schema — and
-  rejects a segment whose code spans or keywords changed;
-  `check_bilingual_parity.py` fails if structure drifts anyway.
-- **Thinking-only tags ignore `think=false`.** `qwen3:4b` (a thinking-only
-  variant) rambled through a one-line task; `qwen3:4b-instruct` was fast
-  but invented a `file:` commit type. Both were dropped.
-- **Never let one model write the code *and* its test.** On a Rust probe
-  judged by `cargo test`, both coder models got the implementation right
-  and one test expectation wrong — exactly the case where a model would
-  "fix" correct code to match its own bad test.
+- **The model never sees structure it must not change.**
+  `scripts/translate_md.py` sends only prose segments (JSON with a schema)
+  and rejects a segment whose code spans or `SHALL`/`MUST` changed;
+  `scripts/llm_task.py` freezes the tests (`--freeze-from`) and strips line
+  numbers a model echoes back.
+- **One model never writes both the code and the test that judges it** —
+  otherwise it can "fix" correct code to match its own wrong expectation.
+- **Hung checks are killed**, not waited on: `llm_task.py` runs the check
+  in its own process group under a timeout.
+- **Output is a draft.** A script, a stronger model or a person checks it
+  before it lands (see "Choosing who does the work" in
+  [`AGENTS.md`](../../AGENTS.md)).
 
-Output from a local model is a draft: a script or a person checks it
-before it lands (see "Choosing who does the work" in
-[`AGENTS.md`](../../AGENTS.md)).
+Keep measurements of your own host — speeds, which models fit, lab runs —
+in `distrobox/remote/lab.local.md` (gitignored, like `host.local`): they
+describe one machine, not the project.
 
 ## What this deliberately doesn't do
 

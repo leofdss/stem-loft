@@ -21,6 +21,10 @@ fi
 
 "$DIR/sync.sh"
 
+# Stop the build container again when this pass ends, pass or fail -- the
+# host is shared with other uses (see power.sh).
+trap '"$DIR/power.sh" down build >/dev/null' EXIT
+
 echo
 echo "== scripts/verify.sh on the remote host"
 "$DIR/run.sh" scripts/verify.sh

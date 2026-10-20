@@ -16,11 +16,12 @@ GroupAdd=keep-groups
 SecurityLabelDisable=true
 Volume=stemloft-ollama-models:/root/.ollama
 PublishPort=@BIND_ADDR@:11434:11434
-# One model in VRAM at a time: the GPU has 8 GB, and swapping models is
+# One model in VRAM at a time: on a GPU of ~8 GB, swapping models is
 # cheaper than two half-offloaded ones fighting over it.
 Environment=OLLAMA_MAX_LOADED_MODELS=1
 Environment=OLLAMA_NUM_PARALLEL=1
-Environment=OLLAMA_KEEP_ALIVE=15m
+# Free VRAM soon after the last request -- the host has other uses.
+Environment=OLLAMA_KEEP_ALIVE=5m
 Environment=OLLAMA_FLASH_ATTENTION=1
 # q8 KV cache roughly halves context memory at no visible quality cost,
 # which is what lets a 7-8B model keep 16k context inside 8 GB.
@@ -33,5 +34,7 @@ Environment=OLLAMA_NO_CLOUD=1
 Restart=on-failure
 TimeoutStartSec=900
 
-[Install]
-WantedBy=default.target
+# No [Install] section on purpose: the service never starts at boot or
+# login. It runs only while someone is working -- `distrobox/remote/power.sh
+# up ollama` starts it, `power.sh down` stops it (an idle model must not
+# hold the host's GPU or RAM).

@@ -126,6 +126,8 @@ input, same output, whoever runs them.
 - [`openspec_archive.py`](scripts/openspec_archive.py) — archive a finished change in both languages.
 - [`openspec_to_kanban.py`](scripts/openspec_to_kanban.py) — the only writer of [`docs/kanban.html`](docs/kanban.html); never hand-edit that file.
 - [`local_llm.py`](scripts/local_llm.py) — send a prompt to the local-model server by role.
+- [`llm_task.py`](scripts/llm_task.py) — let a local model implement one file against a check it can't change (frozen tests, stateless iterations, stall detection).
+- [`translate_md.py`](scripts/translate_md.py) — draft a pt-BR translation without letting the model touch document structure.
 
 Their own tests live in [`scripts/tests/`](scripts/tests/test_workflow_scripts.py)
 (`python3 -m unittest discover -s scripts/tests`).
@@ -167,8 +169,18 @@ git diff --cached | python3 scripts/local_llm.py --role quick \
   --system "Write one Conventional Commits subject line for this diff."
 ```
 
+**Handing a file to a local model** (`scripts/llm_task.py`): write the
+tests first and freeze them (`--freeze-from '#[cfg(test)]'`), give the
+model the exact API and ideally a skeleton (`--start-from`), and let the
+harness loop it against `cargo test`. Expect small local models to get
+close and stall on the last few tests, and to miss bugs the tests don't
+cover: treat the output as a draft that a stronger model or a person
+finishes and reviews (the review playbooks still apply).
+
 Exit status 3 means no local model is configured or reachable — like the
 remote build host being absent, that's normal: do the work another way.
+The service is on-demand: start it with `distrobox/remote/power.sh up
+ollama`, stop it with `power.sh down` when done.
 
 ## Working in parallel
 
@@ -182,6 +194,10 @@ remote build host being absent, that's normal: do the work another way.
 - **Don't parallelize changes that touch the same files.** Check
   `depends_on` and the files a change will touch (e.g. `session.rs`,
   `ipc/commands.rs`) before starting two at once.
+- **Power the remote host down when the session ends.** It's usually
+  someone's own machine: `distrobox/remote/power.sh down` stops
+  the local-model service and the build container. `power.sh up ollama`
+  starts the models again when needed; nothing there starts by itself.
 - **A worker on the remote build host uses its own clone**, never
   `$STEMLOFT_REMOTE_PATH`: `distrobox/remote/sync.sh` overwrites that
   directory with the local working tree.
