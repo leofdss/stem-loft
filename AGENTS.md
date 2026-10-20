@@ -29,7 +29,7 @@ knowledge and every enforced rule lives in a tool-neutral place:
 | Instructions & rules | this file, [`docs/`](docs/architecture.md) |
 | Behavior specs & planned work | [`openspec/`](openspec/README.md) |
 | Task playbooks | [`.agents/skills/<name>/SKILL.md`](#playbooks) — plain Markdown |
-| Checks & enforcement | [`scripts/`](#scripts), [`.githooks/`](#checks-what-runs-when), CI |
+| Checks & enforcement | [`scripts/`](#scripts), [`.githooks/`](#checks-what-runs-when) |
 
 A tool-specific location — `CLAUDE.md`, `.claude/`, `.opencode/`,
 `.cursor/`, `GEMINI.md`, `.github/copilot-instructions.md`, ... — may only
@@ -49,7 +49,7 @@ translates the tool's JSON into a call to `scripts/`. Concretely:
 this mechanically (instruction files point to `AGENTS.md` and stay short,
 adapters reference an existing canonical file, hook adapters delegate to
 `scripts/` and stay small, playbooks don't use one tool's mechanics) and
-runs in [`scripts/verify.sh`](scripts/verify.sh) and CI.
+runs in [`scripts/verify.sh`](scripts/verify.sh).
 
 ## Source of truth, in order
 
@@ -99,7 +99,6 @@ Every check is a script; tools and git hooks only call it.
 | Before running a shell command | No `npm install <pkg>` (no third-party npm packages, see [`architecture.md#stack-and-platform`](docs/architecture.md#stack-and-platform)); Conventional Commits | [`scripts/guard_command.py "<cmd>"`](scripts/guard_command.py) |
 | On `git commit` | the same per-file checks on staged files; Conventional Commits | [`.githooks/`](.githooks/pre-commit) — enable once per clone: `git config core.hooksPath .githooks` |
 | Before calling a task done / opening a PR | everything: script tests, agent-agnostic rule, links, parity, npm baseline, OpenSpec validation, kanban, cargo check/clippy/test, npm build/test, prettier | [`scripts/verify.sh`](scripts/verify.sh) (`--quick` skips cargo/npm) |
-| On every PR and push to `main` | `scripts/verify.sh` + Conventional Commits on every PR commit | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
 
 Findings are feedback, not obstacles: fix what they report before calling
 the change done. `check_changed.py` separates **errors** (objectively wrong;
@@ -187,7 +186,7 @@ remote build host being absent, that's normal: do the work another way.
   `$STEMLOFT_REMOTE_PATH`: `distrobox/remote/sync.sh` overwrites that
   directory with the local working tree.
 - **Review is separate from authorship**: the review playbooks run on every
-  branch before merge, and CI (`scripts/verify.sh`) is the final gate for
+  branch before merge, and `scripts/verify.sh` is the final gate for
   everyone.
 
 ## Testing policy: tests are the source of truth

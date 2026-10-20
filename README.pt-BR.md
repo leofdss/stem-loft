@@ -124,7 +124,7 @@ pessoa pode rodar, nunca algo que só uma ferramenta conhece:
 
 ```bash
 git config core.hooksPath .githooks   # once per clone: commit-msg + pre-commit checks
-scripts/verify.sh                     # the full pass CI runs on every PR
+scripts/verify.sh                     # the full pass, before every PR
 ```
 
 O repositório é deliberadamente **agnóstico a ferramentas de IA**: os

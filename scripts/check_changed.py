@@ -8,7 +8,7 @@ Usage:
     python3 scripts/check_changed.py --json <path>...  # machine-readable
 
 Anyone can run it: a human before committing, the `.githooks/pre-commit`
-hook, CI, or an AI coding tool's post-edit hook (`.claude/hooks/on_edit.py`
+hook, scripts/verify.sh, or an AI coding tool's post-edit hook (`.claude/hooks/on_edit.py`
 is one such thin adapter). No tool owns the logic -- see AGENTS.md
 "Agent-agnostic rule".
 

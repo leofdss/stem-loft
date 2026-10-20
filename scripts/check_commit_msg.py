@@ -4,10 +4,9 @@
 Usage:
     python3 scripts/check_commit_msg.py <message-file>     # git commit-msg hook
     python3 scripts/check_commit_msg.py -m "feat: ..."     # a literal message
-    python3 scripts/check_commit_msg.py --range A..B       # every commit in a range (CI)
+    python3 scripts/check_commit_msg.py --range A..B       # every commit in a range (e.g. a branch before its PR)
 
-Exit 0 when valid, 1 otherwise. Used by `.githooks/commit-msg`, by CI on
-every pull request, and by `scripts/guard_command.py` (which any tool can
+Exit 0 when valid, 1 otherwise. Used by `.githooks/commit-msg` and by `scripts/guard_command.py` (which any tool can
 call before running a shell command) -- one rule, one implementation.
 """
 from __future__ import annotations

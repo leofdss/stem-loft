@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-shot remote validation pass: sync the working tree to the remote build
-# host, then run scripts/verify.sh -- the same full pass CI runs -- on its
+# host, then run scripts/verify.sh -- the repo's full verification pass -- on its
 # CPU instead of the local machine's.
 set -euo pipefail
 

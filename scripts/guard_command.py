@@ -8,7 +8,7 @@ Exit 0 (silent) when the command is allowed; exit 1 with the reason on
 stderr when it breaks a project rule. Meant for any tool that can run a
 check before executing a shell command (`.claude/hooks/bash_guard.py` is
 the Claude Code adapter); humans get the same rules from AGENTS.md, and
-`.githooks/commit-msg` + CI enforce the commit rule for everyone.
+`.githooks/commit-msg` enforces the commit rule for everyone.
 
 Rules:
   1. `npm install/i/add <package>` with a positional argument -- no
