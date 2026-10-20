@@ -132,7 +132,11 @@ handles it'd need aren't there).
 
 The same host can serve local language models on its GPU, so any
 contributor or AI agent can hand a mechanically-checked chore to a model
-that costs nothing per call and never leaves the tailnet. It runs
+that costs nothing per call, has no usage quota, and needs no account with
+any AI provider. Requests to it stay inside the tailnet — but that only
+keeps the code private if no hosted model is in the same workflow: when a
+hosted assistant writes the tests or reviews the result, the code has
+already left the machine. It runs
 [Ollama](https://ollama.com/) as a rootless Podman Quadlet service
 (`stemloft-ollama`), API bound to the host's Tailscale IP only, cloud
 models disabled. The GPU is detected by Ollama's ROCm build (AMD); for

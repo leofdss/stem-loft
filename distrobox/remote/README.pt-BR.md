@@ -137,8 +137,12 @@ precisaria não estão lá).
 
 O mesmo host pode servir modelos de linguagem locais na GPU dele, para que
 qualquer pessoa ou agente de IA possa passar uma tarefa verificável
-mecanicamente para um modelo que não custa nada por chamada e nunca sai da
-tailnet. Ele roda o [Ollama](https://ollama.com/) como um serviço Podman
+mecanicamente para um modelo que não custa nada por chamada, não tem cota
+de uso e não exige conta em nenhum provedor de IA. As requisições a ele
+ficam dentro da tailnet — mas isso só mantém o código privado se nenhum
+modelo hospedado estiver no mesmo fluxo: quando um assistente hospedado
+escreve os testes ou revisa o resultado, o código já saiu da máquina. Ele
+roda o [Ollama](https://ollama.com/) como um serviço Podman
 Quadlet sem root (`stemloft-ollama`), com a API presa só ao IP do Tailscale
 do host e os modelos em nuvem desligados. A GPU é detectada pela versão
 ROCm do Ollama (AMD); para outro fabricante, mude a tag da imagem e os
