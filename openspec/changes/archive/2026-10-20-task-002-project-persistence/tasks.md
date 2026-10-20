@@ -8,3 +8,4 @@
 - [x] 1.4 A simulated crash mid-write leaves the previous file intact (test)
 - [x] 1.5 `cargo check`/`cargo clippy` clean (via `remote-build-offload`)
 - [x] 1.6 Reviewed by `review-rust-core`
+- [x] 1.7 Unit tests cover failed-write cleanup, concurrent writes, a change made during a write, and a broken or non-object migration

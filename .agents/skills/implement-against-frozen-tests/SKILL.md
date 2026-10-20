@@ -94,7 +94,15 @@ Concerns for the reviewer: <anything the tests don't cover that looked risky>
 4. Review the whole unit with the area's review playbook
    (`review-rust-core` / `review-angular-shell`) — a green contract is not a
    correct module. Every bug the review finds gets a new contract test.
-5. `scripts/verify.sh`, then commit (`feat: ...`).
-6. Record the outcome in the change's notes or PR description: green or
+5. **Bring the OpenSpec change up to date** (both languages): every
+   behavior the contract tests now pin — including the ones the review
+   added — goes into the change's delta spec; design decisions go into
+   `design.md`; work you deferred becomes a criterion in the change that
+   will do it. Check the boxes in both `tasks.md` and
+   `scripts/openspec.sh validate <change> --strict`.
+6. `scripts/verify.sh`, then commit (`feat: ...`). Once the change is
+   accepted, archive it with `python3 scripts/openspec_archive.py <change>`
+   so its delta becomes the main spec.
+7. Record the outcome in the change's notes or PR description: green or
    not, check runs, what had to be fixed — that's the data for deciding
    what to delegate next.

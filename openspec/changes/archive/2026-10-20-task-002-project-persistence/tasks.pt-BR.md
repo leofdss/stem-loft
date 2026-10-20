@@ -8,3 +8,4 @@
 - [x] 1.4 Um crash simulado no meio de uma escrita deixa o arquivo anterior intacto (teste)
 - [x] 1.5 `cargo check`/`cargo clippy` limpos (via `remote-build-offload`)
 - [x] 1.6 Revisado pelo `review-rust-core`
+- [x] 1.7 Testes unitários cobrem a limpeza quando a escrita falha, escritas simultâneas, uma mudança feita durante uma escrita, e uma migração quebrada ou que não devolve objeto
