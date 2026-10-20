@@ -40,13 +40,21 @@ themselves (AGENTS.md, "Choosing who does the work").
    commit is what `scripts/check_frozen.py` compares against.
 4. **Write the brief** (template below). One unit per brief; split big
    tasks into several briefs rather than one large one.
+5. **Pick where the check runs** (`remote-build-offload` playbook). If the
+   remote build host is reachable, the brief's check command goes through
+   it — the implementer runs it after every edit, so that's where most of
+   the CPU goes:
+   `distrobox/remote/sync.sh && distrobox/remote/run.sh --dir src-tauri cargo test -q --lib <module>`.
+   Otherwise the plain local command. At the end of the session,
+   `distrobox/remote/power.sh down build`.
 
 ### Brief template
 
 ```text
 Task: TASK-NNN, unit <name>, in <file>.
 Fill in every todo!() above the `#[cfg(test)]` marker so this passes:
-  <check command, e.g. cd src-tauri && cargo test -q --lib core::persistence>
+  <check command, e.g. cd src-tauri && cargo test -q --lib core::persistence,
+   or via the remote build host: distrobox/remote/sync.sh && distrobox/remote/run.sh --dir src-tauri cargo test -q --lib core::persistence>
 Frozen: everything from `#[cfg(test)]` on. Contract commit: <sha>.
 Read first: .agents/skills/<area playbook>/SKILL.md, <spec path>.
 Allowed dependencies: <list>. Iteration budget: <N> check runs.
