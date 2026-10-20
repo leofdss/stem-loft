@@ -117,7 +117,7 @@ is a script anyone can run, never something only one tool knows:
 
 ```bash
 git config core.hooksPath .githooks   # once per clone: commit-msg + pre-commit checks
-scripts/verify.sh                     # the full pass CI runs on every PR
+scripts/verify.sh                     # the full pass, before every PR
 ```
 
 The repo is deliberately **AI-tool-agnostic**: playbooks are plain Markdown

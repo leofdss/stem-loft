@@ -35,7 +35,7 @@ A typical loop:
 1. Edit code locally, as usual.
 2. Before firing up the real app, run `distrobox/remote/check.sh`. It
    pushes your working tree to the remote host and runs
-   `scripts/verify.sh` there — the same full pass CI runs — so a wrong type
+   `scripts/verify.sh` there — the repo's full verification pass — so a wrong type
    or a broken test (Rust or Angular) shows up in well under a minute,
    without your machine compiling `webkit2gtk` locally just to find out.
 3. Once that's clean (or whenever you want to actually see the change),
@@ -118,7 +118,7 @@ distrobox/remote/run.sh --dir src-tauri cargo llvm-cov --summary-only
 distrobox/remote/run.sh --dir ui npm run build
 distrobox/remote/run.sh --dir ui npm run test -- --watch=false
 
-distrobox/remote/check.sh             # sync + scripts/verify.sh (the full CI pass), all in one
+distrobox/remote/check.sh             # sync + scripts/verify.sh (the full pass), all in one
 ```
 
 `sync.sh` excludes `.git`, `target/`, `node_modules/`, `dist/`, `.angular/`

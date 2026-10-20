@@ -2,7 +2,7 @@
 """Claude Code adapter (PostToolUse, matcher Write|Edit).
 
 Thin on purpose: all logic lives in scripts/check_changed.py, which any
-human, git hook, CI job, or other AI tool runs the same way (AGENTS.md,
+human, git hook, or other AI tool runs the same way (AGENTS.md,
 "Agent-agnostic rule"). This file only translates Claude Code's hook JSON
 into a path and the result back into exit status 2 + stderr.
 """

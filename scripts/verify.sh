@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The full verification pass -- the single definition of "green" for this
-# repo. CI runs exactly this; so should a human before opening a PR, and so
+# repo. A human runs exactly this before opening a PR, and so
 # should any AI agent before calling a task done. Nothing here depends on
 # which tool (if any) wrote the change.
 #
@@ -40,7 +40,7 @@ if [[ $QUICK -eq 0 ]]; then
   step "cargo check" bash -c 'cd src-tauri && cargo check --all-targets'
   step "cargo clippy" bash -c 'cd src-tauri && cargo clippy --all-targets'
   step "cargo test" bash -c 'cd src-tauri && cargo test'
-  # A fresh checkout (CI) installs from the lockfile; a dev tree keeps its node_modules.
+  # A fresh checkout installs from the lockfile; a dev tree keeps its node_modules.
   step "npm ci" bash -c 'cd ui && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; }'
   step "prettier --check" bash -c 'cd ui && npx prettier --check .'
   step "npm run build" bash -c 'cd ui && npm run build'

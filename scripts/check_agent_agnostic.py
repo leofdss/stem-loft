@@ -3,7 +3,7 @@
 
 The rule: every piece of project knowledge or enforcement lives in a
 tool-neutral place (AGENTS.md, docs/, openspec/, .agents/skills/,
-scripts/, .githooks/, CI). A tool-specific location (.claude/, .opencode/,
+scripts/, .githooks/). A tool-specific location (.claude/, .opencode/,
 CLAUDE.md, ...) may only hold a thin adapter that points back to it.
 
 What this checks:

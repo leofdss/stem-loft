@@ -35,7 +35,7 @@ Um loop típico:
 1. Edite código localmente, como de costume.
 2. Antes de subir o app de verdade, rode `distrobox/remote/check.sh`. Ele
    envia sua árvore de trabalho para o host remoto e roda o
-   `scripts/verify.sh` lá — o mesmo passe completo do CI — então um tipo errado ou
+   `scripts/verify.sh` lá — o passe completo de verificação do repositório — então um tipo errado ou
    um teste quebrado (Rust ou Angular) aparece em bem menos de um minuto,
    sem sua máquina compilar `webkit2gtk` localmente só para descobrir isso.
 3. Quando estiver tudo limpo (ou sempre que quiser realmente ver a
@@ -122,7 +122,7 @@ distrobox/remote/run.sh --dir src-tauri cargo llvm-cov --summary-only
 distrobox/remote/run.sh --dir ui npm run build
 distrobox/remote/run.sh --dir ui npm run test -- --watch=false
 
-distrobox/remote/check.sh             # sync + scripts/verify.sh (o passe completo do CI), tudo de uma vez
+distrobox/remote/check.sh             # sync + scripts/verify.sh (o passe completo), tudo de uma vez
 ```
 
 `sync.sh` exclui `.git`, `target/`, `node_modules/`, `dist/`, `.angular/`
