@@ -13,7 +13,7 @@
 #   python3 scripts/openspec_to_kanban.py
 
 [task-002-project-persistence]
-status = "backlog"
+status = "review"
 branch = "feat/project-persistence"
 depends_on = ["TASK-001"]
 suitable_for = "agent"
