@@ -7,11 +7,10 @@ import { Component } from '@angular/core';
  * "no score" without breaking anything else on screen. See
  * docs/architecture.md#real-time-visual-state-angular.
  *
- * Still an empty-state placeholder: nothing emits `score_loaded` yet
- * (`Score Metadata Manager::load_score` is a stub, see
- * `src-tauri/src/core/score_metadata.rs`). When it's implemented, this
- * component subscribes to `score_loaded` (static, once) and derives
- * `ChordBeatStream` (`activeChord`/`activeBeat`) from `playback_progress`
+ * Still an empty-state placeholder. The pieces exist: `IpcEvents.score`
+ * relays `score_loaded` (static, once per parse) and `chordBeatAt` derives
+ * `ChordBeatStream` (`activeChord`/`activeBeat`) for one position. Once
+ * `playback_progress` is emitted (TASK-010), this component recomputes it
  * on every tick -- never re-requesting the static score data per tick, see
  * docs/architecture.md#real-time-visual-state-angular.
  */

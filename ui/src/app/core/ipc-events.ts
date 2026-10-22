@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import { Score } from './score';
 
 /** `audio_error`'s payload -- see the events table in docs/architecture.md. */
 export interface AudioErrorPayload {
@@ -21,17 +22,23 @@ export interface ScoreParseErrorPayload {
  * its own (see docs/architecture.md#stack-and-platform, "Angular ...
  * projection/cache of what Rust has already decided").
  *
- * `playback_progress`, `waveform_ready`, `transport_state_changed`, and
- * `score_loaded` aren't wired here yet -- nothing in the Rust core emits
- * them yet either (`Audio Engine`/`Score Metadata Manager` are still
- * stubs). Add them here, the same way, once their producer exists.
+ * `score_loaded` is relayed as the `score` Signal: static data, set once
+ * per parse (the Chord/Tab View derives each tick's chord/beat from it,
+ * see `chordBeatAt`). `playback_progress`, `waveform_ready` and
+ * `transport_state_changed` aren't wired here yet -- nothing in the Rust
+ * core emits them yet (`Audio Engine` is still a stub). Add them here, the
+ * same way, once their producer exists.
  */
 @Injectable({ providedIn: 'root' })
 export class IpcEvents {
   private readonly _audioError = signal<AudioErrorPayload | null>(null);
   private readonly _scoreParseError = signal<ScoreParseErrorPayload | null>(null);
 
+  private readonly _score = signal<Score | null>(null);
+
   readonly audioError = this._audioError.asReadonly();
+  /** The last score the core parsed; null until one arrives. */
+  readonly score = this._score.asReadonly();
   readonly scoreParseError = this._scoreParseError.asReadonly();
 
   /**
@@ -46,6 +53,9 @@ export class IpcEvents {
 
     await window.__TAURI__.event.listen<AudioErrorPayload>('audio_error', (event) => {
       this._audioError.set(event.payload);
+    });
+    await window.__TAURI__.event.listen<Score>('score_loaded', (event) => {
+      this._score.set(event.payload);
     });
     await window.__TAURI__.event.listen<ScoreParseErrorPayload>('score_parse_error', (event) => {
       this._scoreParseError.set(event.payload);

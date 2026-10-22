@@ -12,10 +12,12 @@
 mod core;
 mod ipc;
 
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use core::app_state::AppState;
+use ipc::events::TauriEvents;
 use tauri::Manager;
 
 /// How often the background ticker asks `Project Persistence` whether a
@@ -25,8 +27,12 @@ const CHECKPOINT_TICK: Duration = Duration::from_millis(100);
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(AppState::new())
         .setup(|app| {
+            // Built here, not before the builder: the core publishes its
+            // Events through the app's handle.
+            let events = Arc::new(TauriEvents::new(app.handle().clone()));
+            app.manage(AppState::new(events));
+
             // The debounced checkpoint: a background task that touches
             // Session's state through its lock, never through the Commands
             // queue (docs/architecture.md, concurrency model).

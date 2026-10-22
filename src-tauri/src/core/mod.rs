@@ -8,6 +8,7 @@
 pub mod app_state;
 pub mod audio_engine;
 pub mod command_queue;
+pub mod events;
 pub mod loop_manager;
 pub mod persistence;
 pub mod score_metadata;
