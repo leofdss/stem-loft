@@ -76,7 +76,7 @@ suitable_for = "agent"
 playbooks = ["chordpro-format"]
 
 [task-012-score-events]
-status = "backlog"
+status = "review"
 branch = "feat/score-events"
 depends_on = ["TASK-011"]
 suitable_for = "agent"

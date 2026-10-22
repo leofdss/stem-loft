@@ -30,6 +30,9 @@ pub fn run() {
         .setup(|app| {
             // Built here, not before the builder: the core publishes its
             // Events through the app's handle.
+            // Safe for Commands: Tauri runs this hook on the event loop
+            // before it dispatches any IPC, so `AppState` is managed before
+            // a handler can ask for it.
             let events = Arc::new(TauriEvents::new(app.handle().clone()));
             app.manage(AppState::new(events));
 

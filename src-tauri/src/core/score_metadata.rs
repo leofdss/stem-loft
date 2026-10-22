@@ -162,13 +162,28 @@ impl ScoreMetadataManager {
         Self { events }
     }
 
-    /// Loads the score at `path` and publishes the result: exactly one
-    /// `score_loaded` (the parsed score, including `tempo`/`time`/`tuning`
-    /// from its header) or one `score_parse_error` (line + message). A
-    /// broken score is reported, never returned as a failure: the rest of
-    /// the app keeps working without it.
-    pub fn publish_score(&self, path: &Path, project_duration_sec: f64) {
-        match self.load_score(path, project_duration_sec) {
+    /// Loads the project's score -- `score_file` as the project file
+    /// names it, relative to `project_dir` -- and publishes the result:
+    /// exactly one `score_loaded` (the parsed score, including
+    /// `tempo`/`time`/`tuning` from its header) or one `score_parse_error`
+    /// (line + message). A name that leaves the project folder (absolute,
+    /// or with `..`) is a `score_parse_error` on line 0. A broken score is
+    /// reported, never returned as a failure: the rest of the app keeps
+    /// working without it.
+    pub fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64) {
+        let relative = Path::new(score_file);
+        let stays_inside = relative
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+        let result = if stays_inside && !score_file.is_empty() {
+            self.load_score(&project_dir.join(relative), project_duration_sec)
+        } else {
+            Err(ScoreParseError {
+                line: 0,
+                message: format!("score `{score_file}` must be a file inside the project folder"),
+            })
+        };
+        match result {
             Ok(score) => self.events.score_loaded(&score),
             Err(error) => self.events.score_parse_error(&error),
         }
@@ -1448,7 +1463,7 @@ E|----------------------------------------------------------------|
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("song.cho"), text).unwrap();
         let events = Arc::new(RecordedEvents::default());
-        ScoreMetadataManager::new(events.clone()).publish_score(&dir.join("song.cho"), 12.0);
+        ScoreMetadataManager::new(events.clone()).publish_score(&dir, "song.cho", 12.0);
         fs::remove_dir_all(&dir).ok();
         let recorded = events.events.lock().unwrap().clone();
         recorded
@@ -1468,5 +1483,20 @@ E|----------------------------------------------------------------|
             publish("{title: x}\n{t: 1:5.3}\n"),
             vec!["score_parse_error(line 2: invalid time anchor {t: 1:5.3}: expected `m:ss.cc`, got `1:5.3`)"]
         );
+    }
+
+    #[test]
+    fn a_score_outside_the_project_folder_is_a_parse_error() {
+        // Added after review.
+        for name in ["/etc/passwd", "../other/song.cho", "", "sub/../../x.cho"] {
+            let events = Arc::new(RecordedEvents::default());
+            ScoreMetadataManager::new(events.clone()).publish_score(Path::new("/tmp"), name, 1.0);
+            let recorded = events.events.lock().unwrap().clone();
+            assert_eq!(recorded.len(), 1, "{name}");
+            assert!(
+                recorded[0].starts_with("score_parse_error(line 0:"),
+                "{name}: {recorded:?}"
+            );
+        }
     }
 }

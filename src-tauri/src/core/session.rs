@@ -68,7 +68,7 @@ pub trait LoopManagerCommands: Send + Sync {
 /// What Session asks of `Score Metadata Manager`: publishing the open
 /// project's score (`score_loaded` or `score_parse_error`).
 pub trait ScoreMetadataCommands: Send + Sync {
-    fn publish_score(&self, path: &Path, project_duration_sec: f64);
+    fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64);
 }
 
 /// The `Commands` Session forwards to `Audio Engine` (transport + mixer).
@@ -111,8 +111,8 @@ impl LoopManagerCommands for LoopManager {
 }
 
 impl ScoreMetadataCommands for ScoreMetadataManager {
-    fn publish_score(&self, path: &Path, project_duration_sec: f64) {
-        ScoreMetadataManager::publish_score(self, path, project_duration_sec)
+    fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64) {
+        ScoreMetadataManager::publish_score(self, project_dir, score_file, project_duration_sec)
     }
 }
 
@@ -314,7 +314,7 @@ impl Session {
     /// current one. When saving or loading fails, the current project stays
     /// open. A project with a `score` then has it published by `Score
     /// Metadata Manager` (`score_loaded` or `score_parse_error`), with the
-    /// `.cho` path resolved next to the project file. Returns the loaded
+    /// `.cho` named relative to the project's folder. Returns the loaded
     /// project.
     pub fn open_project(&self, path: &Path) -> Result<Project, String> {
         // Save the current project before reading: reopening the same file
@@ -337,7 +337,7 @@ impl Session {
         if let Some(score) = &project.score {
             let dir = path.parent().unwrap_or_else(|| Path::new("."));
             self.score_metadata
-                .publish_score(&dir.join(score), project.duration_sec());
+                .publish_score(dir, score, project.duration_sec());
         }
         Ok(project)
     }
@@ -581,15 +581,16 @@ mod tests {
     /// Records each score it's asked to publish.
     #[derive(Default)]
     struct FakeScores {
-        published: Mutex<Vec<(PathBuf, f64)>>,
+        published: Mutex<Vec<(PathBuf, String, f64)>>,
     }
 
     impl ScoreMetadataCommands for FakeScores {
-        fn publish_score(&self, path: &Path, project_duration_sec: f64) {
-            self.published
-                .lock()
-                .unwrap()
-                .push((path.to_path_buf(), project_duration_sec));
+        fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64) {
+            self.published.lock().unwrap().push((
+                project_dir.to_path_buf(),
+                score_file.to_string(),
+                project_duration_sec,
+            ));
         }
     }
 
@@ -928,7 +929,7 @@ mod tests {
 
         assert_eq!(
             *f.scores.published.lock().unwrap(),
-            vec![(f.dir.join("song").join("song.cho"), 2.5)]
+            vec![(f.dir.join("song"), "song.cho".to_string(), 2.5)]
         );
     }
 
