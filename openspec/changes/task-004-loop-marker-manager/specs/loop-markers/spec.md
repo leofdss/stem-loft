@@ -30,7 +30,7 @@ The core MUST reject a loop whose bounds aren't finite numbers, whose start is n
 - **THEN** they are rejected and the previous markers stay in place
 
 ### Requirement: The loop follows the open project
-Opening a project SHALL restore the loop saved in it, and creating or closing a project SHALL clear the current loop.
+Opening a project SHALL restore the loop saved in it when it still fits the project's duration and drop it otherwise, never clamping it; creating or closing a project SHALL clear the current loop.
 
 #### Scenario: Reopening a project
 - **WHEN** a project saved with a loop is opened

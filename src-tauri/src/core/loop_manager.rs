@@ -53,6 +53,23 @@ impl LoopManager {
         end_sec: f64,
         project_duration_sec: f64,
     ) -> Result<(), String> {
+        Self::check(start_sec, end_sec, project_duration_sec)?;
+        *self.lock() = Some(LoopRange { start_sec, end_sec });
+        Ok(())
+    }
+
+    /// Puts back a loop saved in the project, or clears it with `None` --
+    /// on opening, creating or closing a project. A saved loop that no
+    /// longer fits (a hand-edited file, a project whose stems changed) is
+    /// checked by the same rules as [`Self::set_markers`] and dropped, never
+    /// clamped: the project then opens with no loop.
+    pub fn restore(&self, markers: Option<LoopRange>, project_duration_sec: f64) {
+        *self.lock() =
+            markers.filter(|m| Self::check(m.start_sec, m.end_sec, project_duration_sec).is_ok());
+    }
+
+    /// The rules of [`Self::set_markers`], without storing anything.
+    fn check(start_sec: f64, end_sec: f64, project_duration_sec: f64) -> Result<(), String> {
         if !start_sec.is_finite() || !end_sec.is_finite() {
             return Err(format!(
                 "loop markers must be finite numbers (start {start_sec} s, end {end_sec} s)"
@@ -75,15 +92,7 @@ impl LoopManager {
                 "loop end {end_sec} s is past the project's end ({project_duration_sec} s)"
             ));
         }
-        *self.lock() = Some(LoopRange { start_sec, end_sec });
         Ok(())
-    }
-
-    /// Puts back a loop saved in the project (validated when it was set),
-    /// or clears it with `None` -- on opening, creating or closing a
-    /// project.
-    pub fn restore(&self, markers: Option<LoopRange>) {
-        *self.lock() = markers;
     }
 }
 
@@ -164,13 +173,25 @@ mod tests {
     }
 
     #[test]
-    fn restore_puts_back_or_clears_the_loop_without_validating() {
+    fn restore_puts_back_or_clears_the_loop() {
         let manager = LoopManager::new();
 
-        manager.restore(range(2.0, 4.0));
+        manager.restore(range(2.0, 4.0), 10.0);
         assert_eq!(manager.markers(), range(2.0, 4.0));
 
-        manager.restore(None);
+        manager.restore(None, 10.0);
         assert_eq!(manager.markers(), None);
+    }
+
+    #[test]
+    fn a_saved_loop_that_no_longer_fits_is_dropped_not_clamped() {
+        // Changed after review: a hand-edited project file, or stems that
+        // changed, must not hand the engine a loop past the audio.
+        let manager = LoopManager::new();
+        for saved in [range(5.0, 12.0), range(5.0, 3.0), range(-1.0, 2.0)] {
+            manager.restore(range(1.0, 2.0), 10.0);
+            manager.restore(saved, 10.0);
+            assert_eq!(manager.markers(), None, "{saved:?}");
+        }
     }
 }

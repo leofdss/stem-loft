@@ -62,7 +62,7 @@ pub trait LoopManagerCommands: Send + Sync {
         end_sec: f64,
         project_duration_sec: f64,
     ) -> Result<(), String>;
-    fn restore(&self, markers: Option<LoopRange>);
+    fn restore(&self, markers: Option<LoopRange>, project_duration_sec: f64);
 }
 
 /// The `Commands` Session forwards to `Audio Engine` (transport + mixer).
@@ -99,8 +99,8 @@ impl LoopManagerCommands for LoopManager {
         LoopManager::set_markers(self, start_sec, end_sec, project_duration_sec)
     }
 
-    fn restore(&self, markers: Option<LoopRange>) {
-        LoopManager::restore(self, markers)
+    fn restore(&self, markers: Option<LoopRange>, project_duration_sec: f64) {
+        LoopManager::restore(self, markers, project_duration_sec)
     }
 }
 
@@ -262,8 +262,9 @@ impl Session {
         }
         self.checkpoint(Instant::now(), true)
             .map_err(|e| e.to_string())?;
+        // The loop goes first: no moment where it outlives its project.
+        self.loop_manager.restore(None, 0.0);
         *self.open() = None;
-        self.loop_manager.restore(None);
         Ok(())
     }
 
@@ -290,11 +291,11 @@ impl Session {
         self.persistence
             .save_project(&path, &project)
             .map_err(|e| e.to_string())?;
+        self.loop_manager.restore(None, 0.0);
         *self.open() = Some(OpenProject {
             path,
             project: project.clone(),
         });
-        self.loop_manager.restore(None);
         Ok(project)
     }
 
@@ -313,11 +314,12 @@ impl Session {
             .load_project(path)
             .map_err(|e| e.to_string())?;
         self.close_current()?;
+        self.loop_manager
+            .restore(project.loop_range, project.duration_sec());
         *self.open() = Some(OpenProject {
             path: path.to_path_buf(),
             project: project.clone(),
         });
-        self.loop_manager.restore(project.loop_range);
         Ok(project)
     }
 
@@ -483,7 +485,7 @@ mod tests {
             ))
         }
 
-        fn restore(&self, markers: Option<LoopRange>) {
+        fn restore(&self, markers: Option<LoopRange>, _project_duration_sec: f64) {
             self.restored.lock().unwrap().push(markers);
         }
     }
@@ -857,6 +859,19 @@ mod tests {
                 None, // closed
             ]
         );
+    }
+
+    #[test]
+    fn a_failed_close_keeps_the_project_and_its_loop() {
+        // Added after review.
+        let f = with_project(Ok(()));
+        f.session.set_markers(1.0, 2.0).unwrap();
+        fs::remove_dir_all(f.dir.join("song")).unwrap(); // the save will fail
+
+        assert!(f.session.close_project().is_err());
+
+        assert!(f.session.is_project_open());
+        assert_eq!(*f.loop_manager.restored.lock().unwrap(), vec![None]); // created only
     }
 
     #[test]

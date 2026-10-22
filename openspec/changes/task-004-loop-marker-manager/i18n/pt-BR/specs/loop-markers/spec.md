@@ -30,7 +30,7 @@ O núcleo MUST rejeitar um loop cujos limites não são números finitos, cujo i
 - **THEN** eles são rejeitados e os marcadores anteriores continuam valendo
 
 ### Requirement: O loop acompanha o projeto aberto
-Abrir um projeto SHALL restaurar o loop salvo nele, e criar ou fechar um projeto SHALL limpar o loop atual.
+Abrir um projeto SHALL restaurar o loop salvo nele quando ele ainda cabe na duração do projeto e descartá-lo caso contrário, nunca recortando; criar ou fechar um projeto SHALL limpar o loop atual.
 
 #### Scenario: Reabrir um projeto
 - **WHEN** um projeto salvo com um loop é aberto
