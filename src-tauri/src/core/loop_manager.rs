@@ -53,14 +53,37 @@ impl LoopManager {
         end_sec: f64,
         project_duration_sec: f64,
     ) -> Result<(), String> {
-        todo!("validate, then store Some(LoopRange)")
+        if !start_sec.is_finite() || !end_sec.is_finite() {
+            return Err(format!(
+                "loop markers must be finite numbers (start {start_sec} s, end {end_sec} s)"
+            ));
+        }
+        if start_sec < 0.0 {
+            return Err(format!(
+                "loop start {start_sec} s is before the project's start"
+            ));
+        }
+        if start_sec >= end_sec {
+            return Err(format!(
+                "loop start {start_sec} s must be before its end {end_sec} s"
+            ));
+        }
+        // A NaN duration would make `end > duration` false for every end:
+        // reject instead of accepting every loop.
+        if project_duration_sec.is_nan() || end_sec > project_duration_sec {
+            return Err(format!(
+                "loop end {end_sec} s is past the project's end ({project_duration_sec} s)"
+            ));
+        }
+        *self.lock() = Some(LoopRange { start_sec, end_sec });
+        Ok(())
     }
 
     /// Puts back a loop saved in the project (validated when it was set),
     /// or clears it with `None` -- on opening, creating or closing a
     /// project.
     pub fn restore(&self, markers: Option<LoopRange>) {
-        todo!("replace the stored loop as is")
+        *self.lock() = markers;
     }
 }
 
@@ -132,6 +155,12 @@ mod tests {
     #[test]
     fn a_project_with_no_stems_has_no_room_for_a_loop() {
         assert!(LoopManager::new().set_markers(0.0, 1.0, 0.0).is_err());
+    }
+
+    #[test]
+    fn an_unknown_duration_rejects_every_loop() {
+        // Added after review.
+        assert!(LoopManager::new().set_markers(0.0, 1.0, f64::NAN).is_err());
     }
 
     #[test]
