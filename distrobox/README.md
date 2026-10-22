@@ -26,15 +26,19 @@ the work lives in the host's `HOME`, which is shared.
 
 Inside the container, the repository is at the same path as on the host,
 and `git`, `claude`, and `code` are ready to use with the host's own
-credentials.
+credentials. `code` is the one exception to "ready on the first enter": it
+isn't in the image, it's installed in the background on the container's
+first start (a minute or two; progress in `/var/log/stemloft-vscode.log`)
+and updated on every start after that.
 
 ## The image
 
 The `Containerfile` in this folder defines StemLoft's development image:
 Arch Linux (`quay.io/toolbx/arch-toolbox`, maintained by the Toolbx
 project — Distrobox's sibling, same family of tools) with Python,
-Node.js + fnm, Rust, git, Claude Code, VS Code, and fish/starship for an
-interactive shell.
+Node.js + fnm, Rust, git, Claude Code, yay, and fish/starship for an
+interactive shell. VS Code is installed at container start, not baked in
+(see below).
 
 Target runtime: **Podman**. Publishing: **GitHub Container Registry (ghcr.io)**,
 public, built via GitHub Actions (`.github/workflows/build-dev-image.yml`).
@@ -64,7 +68,7 @@ public, built via GitHub Actions (`.github/workflows/build-dev-image.yml`).
   container's `HOME` — anything installed in `/home/<user>` during the
   build becomes invisible (or worse, silently overwritten) once the
   container actually runs. Every package goes to `/usr` (via `pacman`/`npm`
-  as root) or `/opt` (VS Code).
+  as root, or `makepkg` for yay).
 - **Rust via the repo package (`rust`), not `rustup`.** `rustup` by default
   lives in `$HOME/.cargo`/`$HOME/.rustup`, which would fall into the same
   trap as the point above. Arch's `rust` package is updated frequently
@@ -85,13 +89,22 @@ public, built via GitHub Actions (`.github/workflows/build-dev-image.yml`).
   official package in the Arch repos; installed as root during the build,
   which places it in `/usr/lib/node_modules` + `/usr/bin/claude` — outside
   `HOME`.
-- **VS Code via Microsoft's official tarball, not AUR.** Also has no
-  official package in the Arch repos. The most common alternative would be
-  AUR (`visual-studio-code-bin`), but that ties the image to a third-party
-  PKGBUILD's maintenance — against the goal of an auditable "works long
-  term" image. Instead, the `Containerfile` downloads the generic tarball
-  published by Microsoft itself and extracts it to `/opt/vscode`, with a
-  symlink at `/usr/local/bin/code`.
+- **VS Code from the AUR with yay, installed at container start, not in
+  the image.** VS Code has no official Arch package; `visual-studio-code-bin`
+  (AUR) repackages Microsoft's own build. Baking it into the image would add
+  ~400 MB to every pull and freeze it at the image's build date, so instead
+  the image ships only `yay` (built from `yay-bin` by a throwaway user,
+  since `makepkg` refuses root) and the `stemloft-vscode` script.
+  `distrobox.ini`'s `init_hooks` runs that script in the background on
+  every container start: it installs VS Code the first time and upgrades it
+  whenever the AUR has a newer version, as the container's own user. Its
+  runtime dependencies are preinstalled in the image, so this normally
+  never syncs pacman's databases; if a new VS Code release ever needs one
+  the image lacks, the script installs it from the official repos with a
+  full `pacman -Syu` instead of letting yay look for it in the AUR. The trade-off: the first start needs network
+  and a minute or two before `code` exists. The remote build host's copy
+  of the container skips it (no screen there; `check_remote_image.py`
+  drops `init_hooks`).
 - **Authentication (git, Claude Code) gets no special handling here.**
   `~/.gitconfig`, `~/.git-credentials`, `~/.claude/`, etc. already live in
   `HOME` — since Distrobox shares `HOME` with the host by default, logging
@@ -107,7 +120,7 @@ public, built via GitHub Actions (`.github/workflows/build-dev-image.yml`).
 ```bash
 podman build -t stemloft-dev -f distrobox/Containerfile .
 podman run --rm -it stemloft-dev bash -lc \
-  'git --version && python --version && node --version && fnm --version && rustc --version && claude --version && code --version'
+  'git --version && python --version && node --version && fnm --version && rustc --version && claude --version && yay --version'
 ```
 
 ## Publishing (GitHub Actions)
@@ -160,7 +173,13 @@ Relevant decisions in it:
   filesystem under `/run/host` for anything outside `HOME` (stems on
   another mount point, say). A `volume=` line is only needed for a path
   that must appear at the *same* path inside the container as on the host.
-- **No `additional_packages`.** Every tool belongs in the
+- **`init_hooks` runs `stemloft-vscode` in the background on every
+  start**, installing VS Code from the AUR the first time and updating it
+  after that (see the image's decisions above). It's the one thing kept
+  out of the image on purpose: an editor, not part of the build, and
+  always the latest release for everyone rather than whatever the image
+  happened to be built with.
+- **No `additional_packages`.** Every other tool belongs in the
   `Containerfile`, where it's part of the published, auditable image.
   Installing from the manifest instead would make each developer's
   container quietly different from the image everyone else pulls.
