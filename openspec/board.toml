@@ -41,7 +41,7 @@ suitable_for = "both"
 playbooks = ["realtime-audio-safety"]
 
 [task-007-waveform-cache]
-status = "backlog"
+status = "review"
 branch = "feat/waveform-cache"
 depends_on = ["TASK-002", "TASK-003"]
 suitable_for = "agent"
