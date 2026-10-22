@@ -216,3 +216,22 @@ class TranslateMdTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RemoteIniTests(unittest.TestCase):
+    """The ini sent to the remote build host pins the image and drops the
+    desktop-only init hooks (VS Code): the build host has no screen."""
+
+    def test_pin_image_replaces_the_image_and_drops_init_hooks(self):
+        import check_remote_image
+        ini = "[stemloft]\nimage=ghcr.io/a:latest\npull=true\ninit_hooks=nohup x &\nentry=false\n"
+        self.assertEqual(
+            check_remote_image.pin_image(ini, "ghcr.io/a@sha256:1"),
+            "[stemloft]\nimage=ghcr.io/a@sha256:1\npull=true\nentry=false\n",
+        )
+
+    def test_the_real_ini_keeps_working(self):
+        import check_remote_image
+        pinned = check_remote_image.pin_image(check_remote_image.DISTROBOX_INI.read_text(), "x@sha256:1")
+        self.assertIn("image=x@sha256:1", pinned)
+        self.assertNotIn("init_hooks=", pinned)

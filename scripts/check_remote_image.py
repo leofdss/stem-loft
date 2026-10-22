@@ -115,12 +115,14 @@ def local_image_ref(image_id: str) -> Optional[str]:
 
 
 def pin_image(ini_text: str, image_ref: str) -> str:
-    """distrobox.ini with its `image=` line replaced by `image_ref`;
-    everything else (init, nvidia, entry, pull, ...) kept as-is."""
+    """distrobox.ini with its `image=` line replaced by `image_ref`, and
+    without `init_hooks=` lines: those set up the desktop side (VS Code),
+    and the build host has no screen -- it only compiles and tests.
+    Everything else (init, nvidia, entry, pull, ...) is kept as-is."""
     pinned, count = re.subn(r"(?m)^image=.*$", f"image={image_ref}", ini_text)
     if count != 1:
         raise ValueError(f"expected exactly one image= line in {DISTROBOX_INI}, found {count}")
-    return pinned
+    return re.sub(r"(?m)^init_hooks=.*\n?", "", pinned)
 
 
 def recreate_remote(host: str, image_ref: str) -> bool:
