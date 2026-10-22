@@ -1,0 +1,4 @@
+{
+  // The Rust crate lives in src-tauri/, not at the repo root.
+  "rust-analyzer.linkedProjects": ["src-tauri/Cargo.toml"]
+}

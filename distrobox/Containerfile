@@ -110,6 +110,14 @@ RUN pacman -Syu --noconfirm --needed \
 # on everyone's PATH.
 RUN cargo install --root /usr/local cargo-llvm-cov
 
+# Tauri CLI (`cargo tauri dev`, the README's way to run the app) -- a cargo
+# subcommand rather than the npm `@tauri-apps/cli`, so the Angular side
+# brings no extra npm dependency (docs/architecture.md#stack-and-platform).
+# Same `--root /usr/local` reasoning as above; `^2` matches the `tauri`
+# crate's major version in src-tauri/Cargo.toml, `--locked` builds with the
+# CLI's own published lockfile.
+RUN cargo install --root /usr/local --locked tauri-cli --version '^2'
+
 # Claude Code (CLI) -- no official package in the Arch repos. Installed via
 # npm global as root, so it lands in /usr/lib/node_modules and
 # /usr/bin/claude (the system npm prefix), never in HOME.
