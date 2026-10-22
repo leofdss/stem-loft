@@ -61,14 +61,81 @@ pub struct Waveform {
 /// to 0.0..=1.0. Reads the samples in bounded chunks, never the whole file
 /// at once. An unreadable or unsupported file is an error (its message).
 pub fn compute_peaks(path: &Path) -> Result<Vec<f32>, String> {
-    todo!("decode in chunks, max |sample| per bucket")
+    const CHUNK_BYTES: usize = 64 * 1024;
+
+    let mut file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let info = read_wav_header(&mut file)?;
+    let width = usize::from(info.block_align);
+    let sample_bytes = usize::from(info.bits_per_sample / 8);
+    if sample_bytes == 0 || sample_value(&info, &vec![0u8; sample_bytes]).is_none() {
+        return Err(format!(
+            "{}: unsupported sample format ({} bits, format {})",
+            path.display(),
+            info.bits_per_sample,
+            info.format
+        ));
+    }
+
+    let frames_total = info.data_len / width as u64;
+    let frames_per_bucket = u64::from((info.sample_rate / PEAKS_PER_SECOND).max(1));
+    let frames_per_chunk = (CHUNK_BYTES / width).max(1);
+    let mut buf = vec![0u8; frames_per_chunk * width];
+
+    file.seek(SeekFrom::Start(info.data_offset))
+        .map_err(|e| format!("seek failed: {e}"))?;
+    let mut peaks = Vec::new();
+    let mut current = 0.0f32;
+    let mut in_bucket = 0u64;
+    let mut remaining = frames_total;
+    while remaining > 0 {
+        let n = remaining.min(frames_per_chunk as u64) as usize;
+        let bytes = n * width;
+        file.read_exact(&mut buf[..bytes])
+            .map_err(|e| format!("read failed: {e}"))?;
+        for frame in buf[..bytes].chunks_exact(width) {
+            for sample in frame.chunks_exact(sample_bytes) {
+                if let Some(value) = sample_value(&info, sample) {
+                    current = current.max(value.abs());
+                }
+            }
+            in_bucket += 1;
+            if in_bucket == frames_per_bucket {
+                peaks.push(current.clamp(0.0, 1.0));
+                current = 0.0;
+                in_bucket = 0;
+            }
+        }
+        remaining -= n as u64;
+    }
+    if in_bucket > 0 {
+        peaks.push(current.clamp(0.0, 1.0));
+    }
+    Ok(peaks)
 }
 
 /// Decodes one sample (`bytes.len()` = `info.bits_per_sample / 8`) to
 /// -1.0..=1.0 by the rules in [`compute_peaks`]; `None` for a bit depth /
 /// format pair it doesn't support (e.g. 12-bit, or 16-bit float).
 fn sample_value(info: &WavInfo, bytes: &[u8]) -> Option<f32> {
-    todo!("8-bit unsigned, 16/24/32-bit signed, 32/64-bit float")
+    match (info.format, info.bits_per_sample) {
+        (1, 8) => Some((f32::from(*bytes.first()?) - 128.0) / 128.0),
+        (1, 16) => {
+            let v = i16::from_le_bytes(bytes.try_into().ok()?);
+            Some(f32::from(v) / 32768.0)
+        }
+        (1, 24) => {
+            let b: [u8; 3] = bytes.try_into().ok()?;
+            let v = i32::from_le_bytes([0, b[0], b[1], b[2]]) >> 8;
+            Some(v as f32 / 8_388_608.0)
+        }
+        (1, 32) => {
+            let v = i32::from_le_bytes(bytes.try_into().ok()?);
+            Some(v as f32 / 2_147_483_648.0)
+        }
+        (3, 32) => Some(f32::from_le_bytes(bytes.try_into().ok()?)),
+        (3, 64) => Some(f64::from_le_bytes(bytes.try_into().ok()?) as f32),
+        _ => None,
+    }
 }
 
 pub struct WaveformCache {
@@ -93,16 +160,41 @@ impl WaveformCache {
     /// and returns it with `computed: false`, without decoding. Otherwise
     /// (missing, stale or corrupt) computes the peaks, writes the cache with
     /// `ProjectPersistence::atomic_write`, and returns `computed: true`. A
-    /// corrupt cache is never an error, only a reason to recompute; a
-    /// missing or unreadable source is.
+    /// corrupt cache, or one that can't be written, is never an error, only
+    /// a reason to recompute; a missing or unreadable source is.
     pub fn peaks(&self, project_dir: &Path, stem: &StemEntry) -> Result<Waveform, String> {
-        todo!("valid cache -> read; else compute + atomic write")
+        let source = project_dir.join(&stem.file);
+        let (size, mtime) =
+            source_stamp(&source).map_err(|e| format!("{}: {e}", source.display()))?;
+        let cache_path = project_dir.join(Self::cache_file_name(&stem.id));
+        if let Some(peaks) = read_cache(&cache_path, size, mtime) {
+            return Ok(Waveform {
+                peaks,
+                computed: false,
+            });
+        }
+
+        let peaks = compute_peaks(&source)?;
+        // The cache only saves work next time: if it can't be written, the
+        // peaks are still good, and the next open just computes them again.
+        if let Ok(count) = u32::try_from(peaks.len()) {
+            let bytes = encode_cache(size, mtime, count, &peaks);
+            let _ = self.persistence.atomic_write(&cache_path, &bytes);
+        }
+        Ok(Waveform {
+            peaks,
+            computed: true,
+        })
     }
 
     /// Discards a stem's cached peaks, e.g. when it's re-imported. A cache
     /// that doesn't exist is not an error.
     pub fn invalidate(&self, project_dir: &Path, stem_id: &str) -> io::Result<()> {
-        todo!("remove the cache file, NotFound is fine")
+        match fs::remove_file(project_dir.join(Self::cache_file_name(stem_id))) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -116,6 +208,56 @@ fn source_stamp(path: &Path) -> io::Result<(u64, u64)> {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_nanos() as u64);
     Ok((meta.len(), modified))
+}
+
+/// The peaks in the cache at `path`, if it's valid for a source of `size`
+/// bytes and modification time `mtime` (see the layout in the module doc).
+/// Any other content -- missing, unreadable, foreign, stale, truncated --
+/// is `None`: a reason to recompute, never an error.
+fn read_cache(path: &Path, size: u64, mtime: u64) -> Option<Vec<f32>> {
+    let bytes = fs::read(path).ok()?;
+    if bytes.len() < HEADER_LEN || &bytes[0..4] != MAGIC {
+        return None;
+    }
+    let u32_at = |at: usize| -> Option<u32> {
+        Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
+    };
+    let u64_at = |at: usize| -> Option<u64> {
+        Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
+    };
+    if u32_at(4)? != CACHE_VERSION
+        || u64_at(8)? != size
+        || u64_at(16)? != mtime
+        || u32_at(24)? != PEAKS_PER_SECOND
+    {
+        return None;
+    }
+    let count = usize::try_from(u32_at(28)?).ok()?;
+    if bytes.len() != HEADER_LEN.checked_add(count.checked_mul(4)?)? {
+        return None;
+    }
+    Some(
+        bytes[HEADER_LEN..]
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect(),
+    )
+}
+
+/// The cache file's bytes for `peaks` of a source with `size` bytes and
+/// modification time `mtime`, laid out as the module doc says.
+fn encode_cache(size: u64, mtime: u64, count: u32, peaks: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(HEADER_LEN + 4 * peaks.len());
+    out.extend_from_slice(MAGIC);
+    out.extend_from_slice(&CACHE_VERSION.to_le_bytes());
+    out.extend_from_slice(&size.to_le_bytes());
+    out.extend_from_slice(&mtime.to_le_bytes());
+    out.extend_from_slice(&PEAKS_PER_SECOND.to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
+    for peak in peaks {
+        out.extend_from_slice(&peak.to_le_bytes());
+    }
+    out
 }
 
 #[cfg(test)]
@@ -223,9 +365,10 @@ mod tests {
 
     #[test]
     fn every_supported_sample_format_is_scaled_to_one() {
-        // 8-bit unsigned: 0 is -1.0, 128 is silence, 192 is +0.5.
+        // 200 Hz: 2 frames per bucket. 8-bit unsigned: 0 is -1.0, 128 is
+        // silence, 192 is +0.5.
         assert_eq!(
-            peaks_of("u8", &wav(1, 1, 100, 8, &[128, 192])).unwrap(),
+            peaks_of("u8", &wav(1, 1, 200, 8, &[128, 192])).unwrap(),
             vec![0.5]
         );
         assert_eq!(
@@ -253,7 +396,7 @@ mod tests {
             .flat_map(|v| v.to_le_bytes())
             .collect();
         assert_eq!(
-            peaks_of("f32", &wav(3, 1, 100, 32, &f32s)).unwrap(),
+            peaks_of("f32", &wav(3, 1, 200, 32, &f32s)).unwrap(),
             vec![1.0]
         );
         let f64s: Vec<u8> = [0.125f64].iter().flat_map(|v| v.to_le_bytes()).collect();
@@ -407,6 +550,20 @@ mod tests {
             assert!(waveform.computed);
             assert_eq!(waveform.peaks.len(), 20);
         }
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_cache_that_cannot_be_written_still_returns_the_peaks() {
+        // Added after review: a directory where the cache file should go
+        // makes both reading and writing it fail.
+        let dir = project("unwritable");
+        fs::create_dir(dir.join("bass.waveform")).unwrap();
+
+        let waveform = cache().peaks(&dir, &stem("bass", "bass.wav")).unwrap();
+
+        assert!(waveform.computed);
+        assert_eq!(waveform.peaks.len(), 20);
         fs::remove_dir_all(&dir).ok();
     }
 
