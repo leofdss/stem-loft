@@ -96,7 +96,7 @@ Every check is a script; tools and git hooks only call it.
 
 | When | What | How |
 |---|---|---|
-| After editing a file | `cargo check` (`.rs`), `tsc --noEmit` and `prettier --check` (`ui/`), npm baseline (`package.json`), doc links + bilingual parity (`.md`), kanban freshness (`openspec/`), "does README need an update?" notes | [`scripts/check_changed.py <paths>`](scripts/check_changed.py) |
+| After editing a file | `cargo check` (`.rs`; on the remote build host when one answers, else locally), `tsc --noEmit` and `prettier --check` (`ui/`), npm baseline (`package.json`), doc links + bilingual parity (`.md`), kanban freshness (`openspec/`), "does README need an update?" notes | [`scripts/check_changed.py <paths>`](scripts/check_changed.py) |
 | Before running a shell command | No `npm install <pkg>` (no third-party npm packages, see [`architecture.md#stack-and-platform`](docs/architecture.md#stack-and-platform)); Conventional Commits | [`scripts/guard_command.py "<cmd>"`](scripts/guard_command.py) |
 | On `git commit` | the same per-file checks on staged files; Conventional Commits | [`.githooks/`](.githooks/pre-commit) — enable once per clone: `git config core.hooksPath .githooks` |
 | Before calling a task done / opening a PR | everything: script tests, agent-agnostic rule, links, parity, npm baseline, OpenSpec validation, kanban, cargo check/clippy/test, npm build/test, prettier | [`scripts/verify.sh`](scripts/verify.sh) (`--quick` skips cargo/npm) |
@@ -202,9 +202,13 @@ remote/power.sh up ollama` starts it, `power.sh down` stops it.
   someone's own machine: `distrobox/remote/power.sh down` stops
   the local-model service and the build container. `power.sh up ollama`
   starts the models again when needed; nothing there starts by itself.
-- **A worker on the remote build host uses its own clone**, never
-  `$STEMLOFT_REMOTE_PATH`: `distrobox/remote/sync.sh` overwrites that
-  directory with the local working tree.
+- **Each worktree gets its own remote copy.** `distrobox/remote/` scripts
+  run from a linked worktree sync it to its own directory on the build
+  host, so parallel workers can all use it; with several `check.sh` at
+  once, set `STEMLOFT_KEEP_BUILD_UP=1` and power the container down at the
+  end ([distrobox/remote/README.md](distrobox/remote/README.md#parallel-worktrees)).
+  A worker logged into the host itself uses its own clone, never
+  `$STEMLOFT_REMOTE_PATH`: `sync.sh` overwrites that directory.
 - **Review is separate from authorship**: the review playbooks run on every
   branch before merge, and `scripts/verify.sh` is the final gate for
   everyone.

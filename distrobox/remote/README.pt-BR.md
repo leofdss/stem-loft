@@ -133,6 +133,28 @@ rápido sobre erros/avisos/resultados de teste, não rodar localmente o
 binário construído remotamente, já que os handles de ALSA/janela que ele
 precisaria não estão lá).
 
+### Worktrees em paralelo
+
+Todo script daqui funciona igual a partir de um `git worktree` vinculado
+(um por change, AGENTS.md "Working in parallel"; a pasta `.worktrees/`,
+ignorada pelo git, é o lugar usual para eles), através do `lib.sh`:
+
+- `host.local` é lido do checkout principal quando o worktree não tem um.
+- O worktree sincroniza para seu próprio diretório remoto,
+  `<STEMLOFT_REMOTE_PATH>-worktrees/<nome da pasta do worktree>`, então
+  workers em paralelo nunca sobrescrevem os arquivos uns dos outros nem
+  esperam pelo mesmo lock do cargo. A primeira sincronização copia
+  `src-tauri/target/` e `ui/node_modules/` da cópia remota do checkout
+  principal, para pular um build frio.
+- Rodando vários `check.sh` ao mesmo tempo, defina
+  `STEMLOFT_KEEP_BUILD_UP=1` para que o primeiro a terminar não pare o
+  container debaixo dos outros, e rode `power.sh down build` você mesmo
+  quando todos acabarem.
+
+Diretórios antigos de worktree no host não são limpos automaticamente:
+`ssh <host> rm -rf <STEMLOFT_REMOTE_PATH>-worktrees/<nome>` depois que o
+branch for mergeado.
+
 ## Modelos locais
 
 > **Experimental — fora do fluxo padrão.** Numa GPU com ~8 GB de VRAM, os
