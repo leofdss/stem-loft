@@ -38,7 +38,8 @@ pub struct WavInfo {
 impl WavInfo {
     /// Frames / sample rate, from the header alone.
     pub fn duration_sec(&self) -> f64 {
-        todo!("data_len / block_align / sample_rate")
+        let frames = self.data_len / u64::from(self.block_align.max(1));
+        frames as f64 / f64::from(self.sample_rate)
     }
 }
 
@@ -113,8 +114,8 @@ impl StemImporter {
     ///    existing stem's (read from its file in `project_dir`), else the
     ///    first new file's; any file that differs fails the whole import
     ///    with `SampleRateMismatch` before anything is written.
-    /// 2. Each file gets an id from [`stem_id`] (unique among `existing`
-    ///    and this import) and is written to `project_dir/<id>.wav` through
+    /// 2. Each file gets an id from [`stem_id`] (unique among `existing`,
+    ///    this import and the files already in `project_dir`) and is written to `project_dir/<id>.wav` through
     ///    `ProjectPersistence::atomic_write_with`: a mono file upmixed by
     ///    [`write_upmixed`], a stereo one copied byte for byte.
     /// 3. If a write fails, the files this call already wrote are removed
@@ -126,8 +127,98 @@ impl StemImporter {
         existing: &[StemEntry],
         files: &[PathBuf],
     ) -> Result<Vec<StemEntry>, ImportError> {
-        todo!("validate every header, then write each stem atomically")
+        // Pass 1: validate every file before anything is written.
+        let mut expected: Option<u32> = match existing.first() {
+            Some(stem) => Some(open_header(&project_dir.join(&stem.file))?.1.sample_rate),
+            None => None,
+        };
+        let mut sources: Vec<(PathBuf, File, WavInfo)> = Vec::with_capacity(files.len());
+        for path in files {
+            let (file, info) = open_header(path)?;
+            if info.channels > 2 {
+                return Err(ImportError::TooManyChannels {
+                    file: path.clone(),
+                    channels: info.channels,
+                });
+            }
+            let expected_rate = *expected.get_or_insert(info.sample_rate);
+            if info.sample_rate != expected_rate {
+                return Err(ImportError::SampleRateMismatch {
+                    file: path.clone(),
+                    found: info.sample_rate,
+                    expected: expected_rate,
+                });
+            }
+            sources.push((path.clone(), file, info));
+        }
+
+        // Pass 2: write each stem; undo this call's writes if one fails.
+        let mut taken: Vec<String> = existing.iter().map(|s| s.id.clone()).collect();
+        let mut written: Vec<PathBuf> = Vec::with_capacity(sources.len());
+        let mut entries = Vec::with_capacity(sources.len());
+        for (path, mut file, info) in sources {
+            // Also skip ids whose file is already on disk without being a
+            // stem of the project (a leftover, a file the user put there):
+            // an import never overwrites a file it didn't write.
+            let mut id = stem_id(&path, &taken);
+            while project_dir.join(format!("{id}.wav")).exists() {
+                taken.push(id);
+                id = stem_id(&path, &taken);
+            }
+            taken.push(id.clone());
+            let file_name = format!("{id}.wav");
+            let dest = project_dir.join(&file_name);
+            let result = self.persistence.atomic_write_with(&dest, |out| {
+                if info.channels == 1 {
+                    write_upmixed(&info, &mut file, out)
+                } else {
+                    file.seek(SeekFrom::Start(0))?;
+                    io::copy(&mut file, out).map(|_| ())
+                }
+            });
+            if let Err(error) = result {
+                for done in &written {
+                    let _ = fs::remove_file(done);
+                }
+                return Err(ImportError::Io {
+                    file: dest,
+                    message: error.to_string(),
+                });
+            }
+            written.push(dest);
+            entries.push(StemEntry {
+                id,
+                file: file_name,
+                duration_sec: info.duration_sec(),
+                waveform_cache: None,
+            });
+        }
+        Ok(entries)
     }
+}
+
+/// Opens `path` and reads its WAV header, mapping failures to `ImportError`.
+fn open_header(path: &Path) -> Result<(File, WavInfo), ImportError> {
+    let mut file = File::open(path).map_err(|e| ImportError::Io {
+        file: path.to_path_buf(),
+        message: e.to_string(),
+    })?;
+    let info = read_wav_header(&mut file).map_err(|message| ImportError::Unsupported {
+        file: path.to_path_buf(),
+        message,
+    })?;
+    Ok((file, info))
+}
+
+/// Reads exactly `buf.len()` bytes, turning end-of-file into `what`.
+fn read_exact_or(file: &mut File, buf: &mut [u8], what: &str) -> Result<(), String> {
+    file.read_exact(buf).map_err(|e| {
+        if e.kind() == io::ErrorKind::UnexpectedEof {
+            what.to_string()
+        } else {
+            format!("read failed: {e}")
+        }
+    })
 }
 
 /// Reads the RIFF header of `file` (from its start; leaves the position
@@ -141,7 +232,102 @@ impl StemImporter {
 /// `channels * bits_per_sample / 8`, a zero sample rate or channel count,
 /// or a `data` chunk running past the end of the file.
 fn read_wav_header(file: &mut File) -> Result<WavInfo, String> {
-    todo!("walk the RIFF chunks for fmt and data")
+    let file_len = file
+        .metadata()
+        .map_err(|e| format!("can't read the file size: {e}"))?
+        .len();
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| format!("seek failed: {e}"))?;
+    let mut riff = [0u8; 12];
+    read_exact_or(file, &mut riff, "file is too short to be a WAV")?;
+    if &riff[0..4] != b"RIFF" || &riff[8..12] != b"WAVE" {
+        return Err("not a RIFF/WAVE file".into());
+    }
+
+    let mut fmt: Option<WavInfo> = None;
+    let mut data: Option<(u64, u64)> = None;
+    let mut pos: u64 = 12;
+    while fmt.is_none() || data.is_none() {
+        let mut head = [0u8; 8];
+        read_exact_or(file, &mut head, "no fmt and data chunks found")?;
+        let id = [head[0], head[1], head[2], head[3]];
+        let size = u64::from(u32::from_le_bytes([head[4], head[5], head[6], head[7]]));
+        let body_start = pos + 8;
+        // Odd-sized bodies are followed by one pad byte.
+        let next = body_start + size + (size & 1);
+
+        match &id {
+            b"fmt " if fmt.is_none() => {
+                if size < 16 {
+                    return Err("fmt chunk is shorter than 16 bytes".into());
+                }
+                // The extensible subformat sits at offset 24, so 40 bytes
+                // is all that's ever needed; skip the rest of a longer one.
+                let take = size.min(40) as usize;
+                let mut body = vec![0u8; take];
+                read_exact_or(file, &mut body, "fmt chunk is truncated")?;
+                let tag = u16::from_le_bytes([body[0], body[1]]);
+                let format = match tag {
+                    1 | 3 => tag,
+                    0xFFFE => {
+                        if body.len() < 26 {
+                            return Err("extensible fmt chunk has no subformat".into());
+                        }
+                        match u16::from_le_bytes([body[24], body[25]]) {
+                            sub @ (1 | 3) => sub,
+                            sub => {
+                                return Err(format!(
+                                    "unsupported extensible subformat {sub:#06x}"
+                                ))
+                            }
+                        }
+                    }
+                    other => return Err(format!("unsupported format tag {other:#06x}")),
+                };
+                let channels = u16::from_le_bytes([body[2], body[3]]);
+                let sample_rate = u32::from_le_bytes([body[4], body[5], body[6], body[7]]);
+                let block_align = u16::from_le_bytes([body[12], body[13]]);
+                let bits_per_sample = u16::from_le_bytes([body[14], body[15]]);
+                if channels == 0 || sample_rate == 0 {
+                    return Err("zero channel count or sample rate".into());
+                }
+                let expected_align = u32::from(channels) * u32::from(bits_per_sample) / 8;
+                if block_align == 0 || u32::from(block_align) != expected_align {
+                    return Err(format!(
+                        "block_align {block_align} isn't {channels} channels x {bits_per_sample} bits"
+                    ));
+                }
+                fmt = Some(WavInfo {
+                    format,
+                    channels,
+                    sample_rate,
+                    bits_per_sample,
+                    block_align,
+                    data_offset: 0,
+                    data_len: 0,
+                });
+            }
+            b"data" if data.is_none() => {
+                if body_start + size > file_len {
+                    return Err("data chunk runs past the end of the file".into());
+                }
+                data = Some((body_start, size));
+            }
+            _ => {}
+        }
+
+        file.seek(SeekFrom::Start(next))
+            .map_err(|e| format!("seek failed: {e}"))?;
+        pos = next;
+    }
+
+    let (mut info, (data_offset, data_len)) = match (fmt, data) {
+        (Some(info), Some(data)) => (info, data),
+        _ => return Err("missing fmt or data chunk".into()),
+    };
+    info.data_offset = data_offset;
+    info.data_len = data_len;
+    Ok(info)
 }
 
 /// Writes a stereo copy of the mono WAV `src` (described by `info`) to
@@ -151,7 +337,51 @@ fn read_wav_header(file: &mut File) -> Result<WavInfo, String> {
 /// frame written twice (left, then right). Streams in bounded chunks --
 /// never the whole file in memory.
 fn write_upmixed(info: &WavInfo, src: &mut File, dst: &mut File) -> io::Result<()> {
-    todo!("canonical stereo header + each mono frame twice")
+    const CHUNK_BYTES: usize = 64 * 1024;
+    let too_big = || io::Error::new(io::ErrorKind::InvalidInput, "stem too large for a WAV file");
+
+    let width = usize::from(info.block_align.max(1));
+    let frames = info.data_len / width as u64;
+    let out_data_len = u32::try_from(frames * width as u64 * 2).map_err(|_| too_big())?;
+    let out_align = u16::try_from(width * 2).map_err(|_| too_big())?;
+    let byte_rate = info.sample_rate.checked_mul(u32::from(out_align)).ok_or_else(too_big)?;
+    let riff_size = out_data_len.checked_add(36).ok_or_else(too_big)?;
+
+    let mut header = Vec::with_capacity(44);
+    header.extend_from_slice(b"RIFF");
+    header.extend_from_slice(&riff_size.to_le_bytes());
+    header.extend_from_slice(b"WAVE");
+    header.extend_from_slice(b"fmt ");
+    header.extend_from_slice(&16u32.to_le_bytes());
+    header.extend_from_slice(&info.format.to_le_bytes());
+    header.extend_from_slice(&2u16.to_le_bytes());
+    header.extend_from_slice(&info.sample_rate.to_le_bytes());
+    header.extend_from_slice(&byte_rate.to_le_bytes());
+    header.extend_from_slice(&out_align.to_le_bytes());
+    header.extend_from_slice(&info.bits_per_sample.to_le_bytes());
+    header.extend_from_slice(b"data");
+    header.extend_from_slice(&out_data_len.to_le_bytes());
+    dst.write_all(&header)?;
+
+    // Whole frames per chunk, about 64 KiB of source per round.
+    let frames_per_chunk = (CHUNK_BYTES / width).max(1) as u64;
+    let mut input = vec![0u8; frames_per_chunk as usize * width];
+    let mut output = Vec::with_capacity(input.len() * 2);
+    src.seek(SeekFrom::Start(info.data_offset))?;
+    let mut remaining = frames;
+    while remaining > 0 {
+        let n = remaining.min(frames_per_chunk);
+        let bytes = n as usize * width;
+        src.read_exact(&mut input[..bytes])?;
+        output.clear();
+        for frame in input[..bytes].chunks_exact(width) {
+            output.extend_from_slice(frame);
+            output.extend_from_slice(frame);
+        }
+        dst.write_all(&output)?;
+        remaining -= n;
+    }
+    Ok(())
 }
 
 /// A stem id from the file name: its stem (no extension), lowercased, every
@@ -159,7 +389,37 @@ fn write_upmixed(info: &WavInfo, src: &mut File, dst: &mut File) -> io::Result<(
 /// no leading/trailing `-`; `stem` if nothing is left. If the id is in
 /// `taken`, append `-2`, `-3`, ... until it isn't.
 fn stem_id(file: &Path, taken: &[String]) -> String {
-    todo!("slug of the file stem, unique among `taken`")
+    let stem = file
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut base = String::new();
+    let mut separator_pending = false;
+    for c in stem.chars() {
+        if c.is_ascii_alphanumeric() {
+            if separator_pending && !base.is_empty() {
+                base.push('-');
+            }
+            separator_pending = false;
+            base.push(c.to_ascii_lowercase());
+        } else {
+            separator_pending = true;
+        }
+    }
+    if base.is_empty() {
+        base = "stem".into();
+    }
+    if !taken.contains(&base) {
+        return base;
+    }
+    let mut n = 2;
+    loop {
+        let candidate = format!("{base}-{n}");
+        if !taken.contains(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 #[cfg(test)]
@@ -490,6 +750,23 @@ mod tests {
         let ids: Vec<&str> = entries.iter().map(|e| e.id.as_str()).collect();
         assert_eq!(ids, vec!["guitar-2", "guitar-3"]);
         assert_eq!(files_in(&dir), vec!["guitar-2.wav", "guitar-3.wav", "guitar.wav"]);
+        fs::remove_dir_all(&dir).ok();
+        fs::remove_dir_all(&source).ok();
+    }
+
+    #[test]
+    fn an_import_never_overwrites_a_file_already_in_the_project_folder() {
+        let (dir, existing) = project_with_guitar("stray");
+        fs::write(dir.join("bass.wav"), b"not part of the project").unwrap();
+        let source = temp_dir("stray-source");
+        fs::copy(fixture("stereo-44100-16.wav"), source.join("bass.wav")).unwrap();
+
+        let entries = importer()
+            .import(&dir, &existing, &[source.join("bass.wav")])
+            .unwrap();
+
+        assert_eq!(entries[0].id, "bass-2");
+        assert_eq!(fs::read(dir.join("bass.wav")).unwrap(), b"not part of the project");
         fs::remove_dir_all(&dir).ok();
         fs::remove_dir_all(&source).ok();
     }
