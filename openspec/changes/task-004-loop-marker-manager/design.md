@@ -15,9 +15,10 @@ Implements `loop_manager.rs` for TASK-004 on top of TASK-009's Session: `set_mar
 - **What's rejected.** Non-finite bounds, a negative start, a start not before the end, an end past the duration, and any loop when the duration is unknown (NaN). A rejected loop leaves the current one unchanged. A project with no stems has no room for a loop.
 - **One loop type.** The Loop Manager stores `Option<LoopRange>`, the same type the project file saves, instead of a second struct with the same fields; `None` means no loop.
 - **Exposed to the Audio Engine.** `markers()` returns the current loop; the engine already holds the Loop Manager and copies the bounds out ahead of time, so the `cpal` callback never takes this lock.
-- **Restored with the project.** Opening a project puts its saved loop back (it was validated when set); creating or closing one clears it.
-- **Contract-first delivery.** The orchestrator wrote the contract tests and the Session wiring; the Haiku implementer filled in `set_markers`/`restore` (green in 1 check run) and flagged the NaN-duration case, which got its own test.
+- **Restored with the project, re-checked.** Opening a project puts its saved loop back after checking it by the same rules against the project's duration; one that no longer fits (a hand-edited file, stems that changed) is dropped, never clamped. Creating or closing a project clears the loop, before the project is released.
+- **Contract-first delivery.** The orchestrator wrote the contract tests and the Session wiring; the Haiku implementer filled in `set_markers`/`restore` (green in 1 check run) and flagged the NaN-duration case, which got its own test. The `review-rust-core` review led to re-checking a restored loop and clearing the loop before releasing a project, each with a test.
 
 ## Risks / Trade-offs
 
-- A saved loop isn't re-checked on open: if the project file was edited by hand to a loop past the stems, it's restored as is until the next `set_markers`.
+- `Project.loop` and the Loop Manager hold the same fact; Session keeps them in step, relying on the Commands queue to never run two changes at once.
+- `markers()` takes a lock: the `cpal` callback (TASK-005) must never call it, but copy the bounds into an atomic or double buffer from the control side.
