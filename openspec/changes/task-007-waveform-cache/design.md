@@ -11,12 +11,12 @@ Implements `waveform.rs` for TASK-007, following `docs/architecture.md#design-no
 
 ## Decisions
 
-- **Resolution and peak definition.** 100 peaks per second (10 ms buckets); a peak is the largest absolute sample across all channels in its bucket, scaled to 0–1. The last, shorter bucket counts.
+- **Resolution and peak definition.** 100 peaks per second: frame `i` belongs to bucket `i × 100 / sample rate`, so the peaks line up with `durationSec` at any rate (a fixed `rate / 100` frames per bucket drifts at 22050 Hz). A peak is the largest absolute sample across all channels in its bucket, scaled to 0–1. The last, shorter bucket counts.
 - **Decoding by hand, reusing the importer's header reader.** Stems in a project are always WAV (TASK-003), so the module reads samples straight from the `data` chunk with `read_wav_header`, in ~64 KiB chunks: 8-bit unsigned, 16/24/32-bit signed, 32/64-bit float. Any other depth is an error.
-- **Self-validating cache file.** `<stem id>.waveform` holds a small header (magic, version, the source's size and modification time, peaks per second, count) and the peaks as f32. Anything that doesn't match, including garbage, an old version or a stem file replaced on disk, is recomputed, never an error.
+- **Self-validating cache file.** `<stem id>.waveform` holds a small header (magic, version, the source's size and modification time, peaks per second, count) and the peaks as f32. Anything that doesn't match, including garbage, an old version, a stem file replaced on disk, or a peak outside 0–1, is recomputed, never an error. The header is checked before the body is read.
 - **Invalidation.** `invalidate` deletes a stem's cache (missing is fine), for the re-import flow; a stem replaced outside the app is caught by the size/mtime check.
 - **The cache is only an optimization.** If it can't be written, the computed peaks are still returned and the next open computes them again.
-- **Contract-first delivery.** The orchestrator wrote the contract tests; the Haiku implementer filled in the module and stopped on one failing test, reporting that the test expected one bucket where the rule gives two (two frames at 100 Hz). The orchestrator fixed that test (200 Hz) instead of the code, and added the unwritable-cache rule after review.
+- **Contract-first delivery.** The orchestrator wrote the contract tests; the Haiku implementer filled in the module and stopped on one failing test, reporting that the test expected one bucket where the rule gives two (two frames at 100 Hz). The orchestrator fixed that test (200 Hz) instead of the code, and, after the `review-rust-core` review, added the unwritable-cache rule, exact bucket boundaries, an mtime-only staleness test, a header-first cache read and a range check on cached peaks.
 
 ## Risks / Trade-offs
 

@@ -11,12 +11,12 @@ Implementa `waveform.rs` para a TASK-007, seguindo `docs/architecture.md#design-
 
 ## Decisions
 
-- **Resolução e definição de pico.** 100 picos por segundo (buckets de 10 ms); um pico é o maior valor absoluto de amostra entre todos os canais no seu bucket, em escala 0–1. O último bucket, mais curto, conta.
+- **Resolução e definição de pico.** 100 picos por segundo: o frame `i` pertence ao bucket `i × 100 / taxa de amostragem`, então os picos acompanham o `durationSec` em qualquer taxa (um número fixo de `taxa / 100` frames por bucket deriva a 22050 Hz). Um pico é o maior valor absoluto de amostra entre todos os canais no seu bucket, em escala 0–1. O último bucket, mais curto, conta.
 - **Decodificação manual, reaproveitando o leitor de cabeçalho do importador.** Os stems de um projeto são sempre WAV (TASK-003), então o módulo lê as amostras direto do chunk `data` com `read_wav_header`, em blocos de ~64 KiB: 8 bits sem sinal, 16/24/32 bits com sinal, float de 32/64 bits. Qualquer outra profundidade é erro.
-- **Arquivo de cache que se valida sozinho.** `<id do stem>.waveform` guarda um pequeno cabeçalho (magic, versão, tamanho e data de modificação da origem, picos por segundo, quantidade) e os picos como f32. Qualquer coisa que não confira, inclusive lixo, uma versão antiga ou um stem substituído no disco, é recalculada, nunca vira erro.
+- **Arquivo de cache que se valida sozinho.** `<id do stem>.waveform` guarda um pequeno cabeçalho (magic, versão, tamanho e data de modificação da origem, picos por segundo, quantidade) e os picos como f32. Qualquer coisa que não confira, inclusive lixo, uma versão antiga, um stem substituído no disco ou um pico fora de 0–1, é recalculada, nunca vira erro. O cabeçalho é conferido antes de o corpo ser lido.
 - **Invalidação.** `invalidate` apaga o cache de um stem (ausente não é erro), para o fluxo de reimportação; um stem substituído fora do app é pego pela conferência de tamanho/mtime.
 - **O cache é só uma otimização.** Se ele não puder ser escrito, os picos calculados ainda são devolvidos e a próxima abertura os calcula de novo.
-- **Entrega com contrato primeiro.** O orquestrador escreveu os testes de contrato; o implementer Haiku preencheu o módulo e parou num teste falhando, relatando que o teste esperava um bucket onde a regra dá dois (dois frames a 100 Hz). O orquestrador corrigiu esse teste (200 Hz) em vez do código, e acrescentou a regra do cache que não pode ser escrito depois da revisão.
+- **Entrega com contrato primeiro.** O orquestrador escreveu os testes de contrato; o implementer Haiku preencheu o módulo e parou num teste falhando, relatando que o teste esperava um bucket onde a regra dá dois (dois frames a 100 Hz). O orquestrador corrigiu esse teste (200 Hz) em vez do código, e, depois da revisão `review-rust-core`, acrescentou a regra do cache que não pode ser escrito, limites de bucket exatos, um teste de desatualização só por mtime, a leitura do cache começando pelo cabeçalho e uma conferência de faixa nos picos em cache.
 
 ## Risks / Trade-offs
 

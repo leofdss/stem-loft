@@ -52,9 +52,9 @@ pub struct Waveform {
     pub computed: bool,
 }
 
-/// Peaks of the WAV at `path`: one per bucket of `sample_rate /
-/// PEAKS_PER_SECOND` frames (at least 1 frame; the last bucket may be
-/// shorter and still counts). A peak is the largest absolute sample value
+/// Peaks of the WAV at `path`: one per 1/PEAKS_PER_SECOND s of audio --
+/// frame `i` falls in bucket `i * PEAKS_PER_SECOND / sample_rate` (integer
+/// division), and the last bucket may be shorter and still counts. A peak is the largest absolute sample value
 /// in the bucket across all channels, with samples scaled to -1.0..=1.0:
 /// 8-bit PCM is unsigned (`(x - 128) / 128`), 16/24/32-bit PCM is signed
 /// (`x / 2^(bits-1)`), 32/64-bit float is taken as is; the result is clamped
@@ -77,7 +77,11 @@ pub fn compute_peaks(path: &Path) -> Result<Vec<f32>, String> {
     }
 
     let frames_total = info.data_len / width as u64;
-    let frames_per_bucket = u64::from((info.sample_rate / PEAKS_PER_SECOND).max(1));
+    // Frame `i` belongs to bucket `i * PEAKS_PER_SECOND / sample_rate`:
+    // exact at any rate, so the peaks line up with `durationSec` even at
+    // 22050 Hz, where a fixed `rate / 100` frames per bucket would drift.
+    let bucket_of = |frame: u64| frame * u64::from(PEAKS_PER_SECOND) / u64::from(info.sample_rate);
+    let mut frame_index = 0u64;
     let frames_per_chunk = (CHUNK_BYTES / width).max(1);
     let mut buf = vec![0u8; frames_per_chunk * width];
 
@@ -99,7 +103,8 @@ pub fn compute_peaks(path: &Path) -> Result<Vec<f32>, String> {
                 }
             }
             in_bucket += 1;
-            if in_bucket == frames_per_bucket {
+            frame_index += 1;
+            if bucket_of(frame_index) != bucket_of(frame_index - 1) {
                 peaks.push(current.clamp(0.0, 1.0));
                 current = 0.0;
                 in_bucket = 0;
@@ -215,8 +220,12 @@ fn source_stamp(path: &Path) -> io::Result<(u64, u64)> {
 /// Any other content -- missing, unreadable, foreign, stale, truncated --
 /// is `None`: a reason to recompute, never an error.
 fn read_cache(path: &Path, size: u64, mtime: u64) -> Option<Vec<f32>> {
-    let bytes = fs::read(path).ok()?;
-    if bytes.len() < HEADER_LEN || &bytes[0..4] != MAGIC {
+    // The header first: a foreign file is rejected before its body is read.
+    let mut file = File::open(path).ok()?;
+    let mut header = [0u8; HEADER_LEN];
+    file.read_exact(&mut header).ok()?;
+    let bytes = &header;
+    if &bytes[0..4] != MAGIC {
         return None;
     }
     let u32_at = |at: usize| -> Option<u32> {
@@ -233,15 +242,22 @@ fn read_cache(path: &Path, size: u64, mtime: u64) -> Option<Vec<f32>> {
         return None;
     }
     let count = usize::try_from(u32_at(28)?).ok()?;
-    if bytes.len() != HEADER_LEN.checked_add(count.checked_mul(4)?)? {
+    let body_len = count.checked_mul(4)?;
+    let file_len = usize::try_from(file.metadata().ok()?.len()).ok()?;
+    if file_len != HEADER_LEN.checked_add(body_len)? {
         return None;
     }
-    Some(
-        bytes[HEADER_LEN..]
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect(),
-    )
+    let mut body = vec![0u8; body_len];
+    file.read_exact(&mut body).ok()?;
+    let peaks: Vec<f32> = body
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    // A flipped bit can't hand the UI a NaN or an out-of-range peak.
+    peaks
+        .iter()
+        .all(|p| (0.0..=1.0).contains(p))
+        .then_some(peaks)
 }
 
 /// The cache file's bytes for `peaks` of a source with `size` bytes and
@@ -506,6 +522,59 @@ mod tests {
 
         assert!(after.computed);
         assert_eq!(after.peaks.len(), 5);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_same_size_stem_with_a_new_modification_time_is_recomputed() {
+        // Added after review: the size alone can't tell a replacement.
+        let dir = project("mtime");
+        let bass = stem("bass", "bass.wav");
+        cache().peaks(&dir, &bass).unwrap();
+
+        File::options()
+            .write(true)
+            .open(dir.join("bass.wav"))
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
+            .unwrap();
+
+        assert!(cache().peaks(&dir, &bass).unwrap().computed);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn peaks_follow_the_duration_at_rates_that_are_not_multiples_of_100() {
+        // Added after review: 22050 frames at 22050 Hz is 1 s = 100 peaks,
+        // not 22050 / 220 = 101 (a fixed 220-frame bucket drifts).
+        let data = i16s(&vec![1000; 22050]);
+        assert_eq!(
+            peaks_of("22050", &wav(1, 1, 22050, 16, &data))
+                .unwrap()
+                .len(),
+            100
+        );
+        let data = i16s(&vec![1000; 11025]);
+        assert_eq!(
+            peaks_of("11025", &wav(1, 1, 11025, 16, &data))
+                .unwrap()
+                .len(),
+            100
+        );
+    }
+
+    #[test]
+    fn a_cache_with_impossible_peaks_is_recomputed() {
+        // Added after review.
+        let dir = project("nan");
+        let bass = stem("bass", "bass.wav");
+        cache().peaks(&dir, &bass).unwrap();
+        for bad in [f32::NAN, -0.5, 1.5] {
+            let mut bytes = fs::read(dir.join("bass.waveform")).unwrap();
+            bytes[HEADER_LEN..HEADER_LEN + 4].copy_from_slice(&bad.to_le_bytes());
+            fs::write(dir.join("bass.waveform"), &bytes).unwrap();
+            assert!(cache().peaks(&dir, &bass).unwrap().computed, "{bad}");
+        }
         fs::remove_dir_all(&dir).ok();
     }
 
