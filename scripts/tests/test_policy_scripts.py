@@ -56,5 +56,15 @@ class GuardCommandTests(unittest.TestCase):
         self.assertIsNone(guard_command.violation(cmd))
 
 
+    def test_an_earlier_heredoc_is_not_the_commit_message(self):
+        script = "python3 - <<'EOF'\nprint('x')\nEOF\n"
+        self.assertIsNone(guard_command.violation(script + "git add -A && git commit -q -m 'fix: y'"))
+        self.assertIsNotNone(guard_command.violation(script + f"git commit -m '{BAD_SUBJECT}'"))
+
+    def test_heredoc_message_after_another_heredoc_is_checked(self):
+        cmd = f"cat > a <<'X'\nfeat: fine\nX\ngit commit -F- <<'EOF'\n{BAD_SUBJECT}\nEOF"
+        self.assertIsNotNone(guard_command.violation(cmd))
+
+
 if __name__ == "__main__":
     unittest.main()
