@@ -337,6 +337,25 @@ class CheckFrozenTests(unittest.TestCase):
             f.write_text("pub fn a() {}\n")
             self.assertEqual(check_frozen.compare(f, "#[cfg(test)]", "HEAD")[0], 2)
 
+    def test_rustfmt_reformatting_alone_is_not_a_change(self):
+        import shutil
+        if shutil.which("rustfmt") is None:
+            self.skipTest("rustfmt not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.repo_with_contract(Path(tmp))
+            f.write_text(f.read_text().replace(
+                "mod tests { #[test] fn t() { assert_eq!(1, 1); } }",
+                "mod tests {\n    #[test]\n    fn t() {\n        assert_eq!(1, 1);\n    }\n}"))
+            code, message = check_frozen.compare(f, "#[cfg(test)]", "HEAD")
+            self.assertEqual(code, 0, message)
+            self.assertIn("formatting only", message)
+
+    def test_a_real_edit_still_fails_after_rustfmt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.repo_with_contract(Path(tmp))
+            f.write_text(f.read_text().replace("assert_eq!(1, 1);", "assert_eq!(1, 1) ;  // ok\n"))
+            self.assertEqual(check_frozen.compare(f, "#[cfg(test)]", "HEAD")[0], 1)
+
     def test_an_uncommitted_contract_cant_be_checked(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.repo_with_contract(Path(tmp))
@@ -408,3 +427,32 @@ class RemoteWorktreeTests(unittest.TestCase):
                 self.assertEqual(check_remote_image.read_remote_host(), "me@box")
             finally:
                 check_remote_image.REPO_ROOT, check_remote_image.HOST_LOCAL = saved
+
+
+class CheckChangedRemoteTests(unittest.TestCase):
+    """check_changed.py's post-edit cargo check goes to the remote build
+    host only when one is configured and answers; otherwise it runs
+    locally, silently."""
+
+    def test_local_checks_env_forces_local(self):
+        import os
+        import check_changed
+        os.environ["STEMLOFT_LOCAL_CHECKS"] = "1"
+        try:
+            self.assertIsNone(check_changed.remote_runner(Path(__file__).resolve().parents[2]))
+        finally:
+            del os.environ["STEMLOFT_LOCAL_CHECKS"]
+
+    def test_no_host_configured_means_local(self):
+        import shutil
+        import check_changed
+        with tempfile.TemporaryDirectory() as tmp:
+            remote = Path(tmp) / "distrobox" / "remote"
+            remote.mkdir(parents=True)
+            shutil.copy(Path(__file__).resolve().parents[2] / "distrobox" / "remote" / "lib.sh", remote / "lib.sh")
+            self.assertIsNone(check_changed.remote_runner(Path(tmp)))
+
+    def test_no_remote_scripts_means_local(self):
+        import check_changed
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(check_changed.remote_runner(Path(tmp)))

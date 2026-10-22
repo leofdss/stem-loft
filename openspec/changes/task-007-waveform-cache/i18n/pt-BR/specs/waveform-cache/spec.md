@@ -24,3 +24,14 @@ Reimportar ou substituir um stem MUST invalidar os picos em cache daquele stem.
 #### Scenario: Stem substituído
 - **WHEN** um stem é substituído por um arquivo novo
 - **THEN** os picos dele são recalculados em vez de lidos do cache antigo
+
+### Requirement: Cache que se valida sozinho
+Um arquivo de cache SHALL ser usado só quando a versão do formato e a resolução conferem e ele registra o tamanho e a data de modificação atuais do arquivo do stem; qualquer outro cache, inclusive um corrompido, SHALL ser recalculado em vez de virar erro.
+
+#### Scenario: Cache corrompido
+- **WHEN** o arquivo de cache de um stem contém lixo
+- **THEN** os picos são recalculados e o cache reescrito
+
+#### Scenario: Cache não pode ser escrito
+- **WHEN** o arquivo de cache não pode ser escrito
+- **THEN** os picos calculados ainda são devolvidos
