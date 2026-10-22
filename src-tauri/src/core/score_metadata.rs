@@ -197,12 +197,33 @@ impl Default for ScoreMetadataManager {
 // Each one works on a single line's text and reports a plain message; the
 // parser below adds the line number.
 
+/// ASCII digits only (a leading `+` or `-` is not a digit), as a `u64`;
+/// `None` when empty, not all digits, or too large for a `u64`.
+fn digits(s: &str) -> Option<u64> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
+}
+
 /// `{t:}`'s value -> seconds. `minute ":" second "." hundredth`: minute is
 /// 1+ ASCII digits, second exactly 2 digits (00-59), hundredth exactly 2
 /// digits. Surrounding whitespace is ignored; anything else (including a
 /// minute too large for a `u64`) is an error, never a panic.
 fn parse_time_anchor(value: &str) -> Result<f64, String> {
-    todo!("m:ss.cc -> minute * 60 + second + hundredth / 100, strict digit counts")
+    let value = value.trim();
+    let bad = || format!("expected `m:ss.cc`, got `{value}`");
+    let (minute, rest) = value.split_once(':').ok_or_else(bad)?;
+    let (second, hundredth) = rest.split_once('.').ok_or_else(bad)?;
+    let minute = digits(minute).ok_or_else(bad)?;
+    let second = digits(second).filter(|_| second.len() == 2).ok_or_else(bad)?;
+    let hundredth = digits(hundredth)
+        .filter(|_| hundredth.len() == 2)
+        .ok_or_else(bad)?;
+    if second > 59 {
+        return Err(format!("second {second:02} is outside 00-59"));
+    }
+    Ok(minute as f64 * 60.0 + second as f64 + hundredth as f64 / 100.0)
 }
 
 /// A directive line: `Ok(None)` when `line` (already trimmed) doesn't start
@@ -211,24 +232,70 @@ fn parse_time_anchor(value: &str) -> Result<f64, String> {
 /// rest = whatever follows the closing `}`, trimmed. `Err` when there's no
 /// closing `}`.
 fn split_directive(line: &str) -> Result<Option<(String, String, String)>, String> {
-    todo!("split `{{name: value}}rest` / `{{name value}}rest` / `{{name}}rest`")
+    let Some(body) = line.strip_prefix('{') else {
+        return Ok(None);
+    };
+    let Some(close) = body.find('}') else {
+        return Err(format!("`{line}` has no closing `}}`"));
+    };
+    let inside = &body[..close];
+    let rest = body[close + 1..].trim().to_string();
+    let name_end = inside
+        .find(|c: char| c == ':' || c.is_whitespace())
+        .unwrap_or(inside.len());
+    let name = inside[..name_end].to_lowercase();
+    let after = inside[name_end..].trim_start();
+    let after = after.strip_prefix(':').unwrap_or(after);
+    Ok(Some((name, after.trim().to_string(), rest)))
 }
 
 /// `{tempo}`: a positive, finite number of beats per minute (`80`, `92.5`).
 fn parse_tempo(value: &str) -> Result<f64, String> {
-    todo!("positive finite f64")
+    let value = value.trim();
+    let tempo: f64 = value
+        .parse()
+        .map_err(|_| format!("tempo `{value}` is not a number"))?;
+    if tempo.is_finite() && tempo > 0.0 {
+        Ok(tempo)
+    } else {
+        Err(format!("tempo must be a positive, finite number, got `{value}`"))
+    }
 }
 
 /// `{time}`: `numerator/denominator`, both integers > 0, whitespace around
 /// either part allowed.
 fn parse_time_signature(value: &str) -> Result<TimeSignature, String> {
-    todo!("`4/4` -> TimeSignature {{ numerator: 4, denominator: 4 }}")
+    let part = |s: &str| {
+        digits(s.trim())
+            .and_then(|n| u32::try_from(n).ok())
+            .filter(|n| *n > 0)
+    };
+    let (num, den) = value.split_once('/').ok_or_else(|| {
+        format!("time must be `numerator/denominator`, got `{value}`")
+    })?;
+    match (part(num), part(den)) {
+        (Some(numerator), Some(denominator)) => Ok(TimeSignature {
+            numerator,
+            denominator,
+        }),
+        _ => Err(format!(
+            "time must be two integers above 0, got `{value}`"
+        )),
+    }
 }
 
 /// `{tuning}`: exactly 6 whitespace-separated note names, lowest string
 /// first.
 fn parse_tuning(value: &str) -> Result<Vec<String>, String> {
-    todo!("6 tokens, else error")
+    let names: Vec<String> = value.split_whitespace().map(String::from).collect();
+    if names.len() == 6 {
+        Ok(names)
+    } else {
+        Err(format!(
+            "tuning needs 6 note names, lowest string first, got {}",
+            names.len()
+        ))
+    }
 }
 
 /// `{define}`: `NAME [base-fret N] frets F F F F F F [fingers ...]`.
@@ -236,7 +303,44 @@ fn parse_tuning(value: &str) -> Result<Vec<String>, String> {
 /// exactly 6 entries, each `x`/`X`/`N` (muted) or an integer 0-24; whatever
 /// follows `fingers` is ignored; any other keyword is an error.
 fn parse_define(value: &str) -> Result<(String, ChordDiagram), String> {
-    todo!("chord name + ChordDiagram")
+    let fret = |token: &str| -> Result<DiagramFret, String> {
+        if matches!(token, "x" | "X" | "N") {
+            return Ok(DiagramFret::Muted);
+        }
+        digits(token)
+            .and_then(|n| u8::try_from(n).ok())
+            .filter(|n| *n <= 24)
+            .map(DiagramFret::Fret)
+            .ok_or_else(|| format!("fret must be x, X, N or 0-24, got `{token}`"))
+    };
+
+    let mut tokens = value.split_whitespace();
+    let name = tokens.next().ok_or("`{define}` needs a chord name")?;
+    let mut base_fret = 1;
+    let mut frets = None;
+    while let Some(keyword) = tokens.next() {
+        match keyword {
+            "base-fret" => {
+                let token = tokens.next().ok_or("`base-fret` needs a number")?;
+                base_fret = digits(token)
+                    .and_then(|n| u32::try_from(n).ok())
+                    .filter(|n| *n >= 1)
+                    .ok_or_else(|| format!("base-fret must be 1 or more, got `{token}`"))?;
+            }
+            "frets" => {
+                let mut list = Vec::with_capacity(6);
+                for _ in 0..6 {
+                    let token = tokens.next().ok_or("`frets` needs exactly 6 entries")?;
+                    list.push(fret(token)?);
+                }
+                frets = Some(list);
+            }
+            "fingers" => break,
+            other => return Err(format!("unknown `{{define}}` keyword `{other}`")),
+        }
+    }
+    let frets = frets.ok_or("`{define}` needs `frets`")?;
+    Ok((name.to_string(), ChordDiagram { base_fret, frets }))
 }
 
 /// A chord/lyrics line -> `(Some((chord, column)), text)` or `(None, text)`.
@@ -246,7 +350,38 @@ fn parse_define(value: &str) -> Result<(String, ChordDiagram), String> {
 /// contain "one chord per line"), a `[` with no `]`, a `]` with no `[`, an
 /// empty `[]`.
 fn parse_chord_line(line: &str) -> Result<(Option<(String, usize)>, String), String> {
-    todo!("extract the single [chord] and its column")
+    let mut text = String::new();
+    let mut chord: Option<(String, usize)> = None;
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '[' => {
+                if chord.is_some() {
+                    return Err(
+                        "more than one chord on a line; the dialect allows one chord per line"
+                            .into(),
+                    );
+                }
+                let mut name = String::new();
+                loop {
+                    match chars.next() {
+                        Some(']') => break,
+                        Some('[') => return Err("`[` inside a chord name".into()),
+                        Some(ch) => name.push(ch),
+                        None => return Err(format!("`[{name}` has no closing `]`")),
+                    }
+                }
+                let name = name.trim().to_string();
+                if name.is_empty() {
+                    return Err("empty chord `[]`".into());
+                }
+                chord = Some((name, text.chars().count()));
+            }
+            ']' => return Err("`]` with no `[` before it".into()),
+            other => text.push(other),
+        }
+    }
+    Ok((chord, text))
 }
 
 /// One tab note (a run of non-`-` characters on a staff line):
