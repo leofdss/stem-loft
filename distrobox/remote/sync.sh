@@ -35,6 +35,7 @@ do_sync() {
   # --mkpath: a fresh host (or a new STEMLOFT_REMOTE_PATH) has no target dir yet.
   rsync -az --delete --mkpath \
     --exclude '.git' \
+    --exclude '.worktrees' \
     --exclude 'target' \
     --exclude 'node_modules' \
     --exclude 'dist' \

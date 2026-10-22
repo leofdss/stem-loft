@@ -42,7 +42,7 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+\S")
 # across languages, as opposed to prose or diagrams that may be translated.
 INVARIANT_LANGS = {"bash", "sh", "shell", "json", "toml", "yaml", "yml", "ini"}
 
-EXCLUDED_DIR_MARKERS = ("/.git/", "/node_modules/", "/.obsidian/")
+EXCLUDED_DIR_MARKERS = ("/.git/", "/node_modules/", "/.obsidian/", "/.worktrees/")
 
 
 def is_excluded(path: Path) -> bool:

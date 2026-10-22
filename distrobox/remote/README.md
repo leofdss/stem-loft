@@ -131,7 +131,8 @@ handles it'd need aren't there).
 ### Parallel worktrees
 
 Every script here works the same from a linked `git worktree` (one per
-change, AGENTS.md "Working in parallel"), through `lib.sh`:
+change, AGENTS.md "Working in parallel"; the gitignored `.worktrees/`
+folder is the usual place for them), through `lib.sh`:
 
 - `host.local` is read from the main checkout when the worktree has none.
 - The worktree syncs to its own remote directory,

@@ -136,7 +136,8 @@ precisaria não estão lá).
 ### Worktrees em paralelo
 
 Todo script daqui funciona igual a partir de um `git worktree` vinculado
-(um por change, AGENTS.md "Working in parallel"), através do `lib.sh`:
+(um por change, AGENTS.md "Working in parallel"; a pasta `.worktrees/`,
+ignorada pelo git, é o lugar usual para eles), através do `lib.sh`:
 
 - `host.local` é lido do checkout principal quando o worktree não tem um.
 - O worktree sincroniza para seu próprio diretório remoto,
