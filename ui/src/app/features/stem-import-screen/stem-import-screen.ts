@@ -4,9 +4,9 @@ import { Ipc } from '../../core/ipc';
 /**
  * Flow for selecting stem files and importing them into the project. Fires
  * `import_stems` as soon as the user confirms a selection -- no client-side
- * queue, no optimistic update: the file list isn't added to any "project"
- * Signal here, since this component has no such state yet (that will come
- * from a `Project`-shaped Event once `Stem Importer` is implemented).
+ * queue, no optimistic update: nothing is added to any "project" Signal
+ * before the core answers. `importStems` resolves with the stems the core
+ * actually added; showing them is the stem list's job once one exists.
  */
 @Component({
   selector: 'stemloft-stem-import-screen',

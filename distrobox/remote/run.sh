@@ -28,7 +28,9 @@ if [[ $# -eq 0 ]]; then
   exit 1
 fi
 
+# STEMLOFT_LOCAL_CHECKS: on the host, a script like check_changed.py must
+# not try to offload to the host again.
 printf -v CMD_QUOTED '%q ' "$@"
 REMOTE_PATH="$REMOTE_ROOT"
 ssh "$STEMLOFT_REMOTE_HOST" \
-  "distrobox enter stemloft -- bash -lc 'cd $REMOTE_PATH/$PROJECT_DIR && $CMD_QUOTED'"
+  "distrobox enter stemloft -- bash -lc 'cd $REMOTE_PATH/$PROJECT_DIR && STEMLOFT_LOCAL_CHECKS=1 $CMD_QUOTED'"
