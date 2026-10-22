@@ -137,8 +137,11 @@ mod tests {
 
         let handles: Vec<_> = (0..8)
             .map(|_| {
-                let (queue, running, overlaps) =
-                    (Arc::clone(&queue), Arc::clone(&running), Arc::clone(&overlaps));
+                let (queue, running, overlaps) = (
+                    Arc::clone(&queue),
+                    Arc::clone(&running),
+                    Arc::clone(&overlaps),
+                );
                 thread::spawn(move || {
                     for _ in 0..20 {
                         queue.run(|| {

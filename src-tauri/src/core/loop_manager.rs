@@ -44,7 +44,9 @@ impl LoopManager {
     /// validation needs the project's stems, which `Stem Importer` doesn't
     /// expose yet.
     pub fn set_markers(&self, _start_sec: f64, _end_sec: f64) -> Result<(), String> {
-        Err("set_markers: not yet implemented (needs the project's duration to validate against)"
-            .into())
+        Err(
+            "set_markers: not yet implemented (needs the project's duration to validate against)"
+                .into(),
+        )
     }
 }

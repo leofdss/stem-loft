@@ -82,7 +82,10 @@ pub async fn stop(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn set_stem_volume(app: AppHandle, stem_id: String, volume: f32) -> Result<(), String> {
-    queued(app, move |session| session.set_stem_volume(&stem_id, volume)).await
+    queued(app, move |session| {
+        session.set_stem_volume(&stem_id, volume)
+    })
+    .await
 }
 
 #[tauri::command]

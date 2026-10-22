@@ -201,6 +201,59 @@ impl Session {
         Ok(true)
     }
 
+    /// `Err(NO_PROJECT_OPEN)` unless a project is open. Takes the lock only
+    /// for the check; the caller then calls its module without holding it.
+    fn require_open(&self) -> Result<(), String> {
+        if self.is_project_open() {
+            Ok(())
+        } else {
+            Err(NO_PROJECT_OPEN.to_string())
+        }
+    }
+
+    /// Applies `change` to the open project and marks it dirty, in one
+    /// locked section. Errors with `NO_PROJECT_OPEN` if nothing is open.
+    fn record_change(&self, change: impl FnOnce(&mut Project)) -> Result<(), String> {
+        let mut open = self.open();
+        let open = open.as_mut().ok_or_else(|| NO_PROJECT_OPEN.to_string())?;
+        change(&mut open.project);
+        self.persistence.mark_dirty(Instant::now());
+        Ok(())
+    }
+
+    /// Records a mixer change for `stem_id`, starting from the defaults if
+    /// the stem has no entry yet.
+    fn record_mixer(
+        &self,
+        stem_id: &str,
+        change: impl FnOnce(&mut MixerSettings),
+    ) -> Result<(), String> {
+        self.record_change(|project| {
+            change(
+                project
+                    .mixer
+                    .entry(stem_id.to_owned())
+                    .or_insert(MixerSettings {
+                        volume: 1.0,
+                        mute: false,
+                        solo: false,
+                    }),
+            )
+        })
+    }
+
+    /// Definitive checkpoint of the open project (if any), then forget it.
+    /// The project stays open if the write fails. A no-op when nothing is open.
+    fn close_current(&self) -> Result<(), String> {
+        if !self.is_project_open() {
+            return Ok(());
+        }
+        self.checkpoint(Instant::now(), true)
+            .map_err(|e| e.to_string())?;
+        *self.open() = None;
+        Ok(())
+    }
+
     // --- Project lifecycle -------------------------------------------------
 
     /// Creates `dir` (and any missing parent) holding a new, empty project
@@ -211,7 +264,32 @@ impl Session {
     /// does). Refuses, writing nothing and keeping the current project open,
     /// when `dir/PROJECT_FILE` already exists. Returns the new project.
     pub fn create_project(&self, dir: &Path, name: &str) -> Result<Project, String> {
-        todo!("create, save, close the current one, open the new one")
+        let path = dir.join(PROJECT_FILE);
+        if path.exists() {
+            return Err(format!("a project already exists at {}", path.display()));
+        }
+        // Save the current project before creating anything: if that fails,
+        // no new file is left behind and the current project stays open.
+        self.checkpoint(Instant::now(), true)
+            .map_err(|e| e.to_string())?;
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let project = Project {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_owned(),
+            stems: Vec::new(),
+            score: None,
+            loop_range: None,
+            mixer: BTreeMap::new(),
+        };
+        self.persistence
+            .save_project(&path, &project)
+            .map_err(|e| e.to_string())?;
+        *self.open() = Some(OpenProject {
+            path,
+            project: project.clone(),
+        });
+        Ok(project)
     }
 
     /// Loads the project file at `path` with `ProjectPersistence::
@@ -220,7 +298,16 @@ impl Session {
     /// Nothing changes when loading fails or the current project can't be
     /// saved. Returns the loaded project.
     pub fn open_project(&self, path: &Path) -> Result<Project, String> {
-        todo!("load first, then close the current one, then swap")
+        let project = self
+            .persistence
+            .load_project(path)
+            .map_err(|e| e.to_string())?;
+        self.close_current()?;
+        *self.open() = Some(OpenProject {
+            path: path.to_path_buf(),
+            project: project.clone(),
+        });
+        Ok(project)
     }
 
     /// Writes the open project if it has unsaved changes (a definitive
@@ -228,7 +315,8 @@ impl Session {
     /// the project stays open and the error is returned.
     /// [`NO_PROJECT_OPEN`] when nothing is open.
     pub fn close_project(&self) -> Result<(), String> {
-        todo!("definitive checkpoint, then forget the project")
+        self.require_open()?;
+        self.close_current()
     }
 
     // --- Dispatch to the owning module --------------------------------------
@@ -243,48 +331,76 @@ impl Session {
     /// `stems`, marks it dirty and returns them. An `ImportError` comes
     /// back as its `Display` text.
     pub fn import_stems(&self, files: Vec<PathBuf>) -> Result<Vec<StemEntry>, String> {
-        todo!("dispatch to the importer, record the new stems")
+        let (dir, existing) = {
+            let open = self.open();
+            let open = open.as_ref().ok_or_else(|| NO_PROJECT_OPEN.to_string())?;
+            (open.dir().to_path_buf(), open.project.stems.clone())
+        };
+        let new_stems = self
+            .stem_importer
+            .import(&dir, &existing, &files)
+            .map_err(|e| e.to_string())?;
+        if !new_stems.is_empty() {
+            self.record_change(|project| project.stems.extend(new_stems.iter().cloned()))?;
+        }
+        Ok(new_stems)
     }
 
     /// Forwards to `Loop & Marker Manager`; on success sets the project's
     /// `loop` to `{ start_sec, end_sec }` and marks it dirty.
     pub fn set_markers(&self, start_sec: f64, end_sec: f64) -> Result<(), String> {
-        todo!("dispatch, record the loop range")
+        self.require_open()?;
+        self.loop_manager.set_markers(start_sec, end_sec)?;
+        self.record_change(|project| {
+            project.loop_range = Some(LoopRange { start_sec, end_sec });
+        })
     }
 
     /// Forwards to `Audio Engine`. Transport state isn't saved in the
     /// project, so nothing is marked dirty.
     pub fn play(&self) -> Result<(), String> {
-        todo!("dispatch")
+        self.require_open()?;
+        self.audio_engine.play()
     }
 
     /// Forwards to `Audio Engine`; on success, pausing is a definitive
     /// event: a definitive checkpoint at `Instant::now()` (its I/O error,
     /// if any, comes back as text).
     pub fn pause(&self) -> Result<(), String> {
-        todo!("dispatch, then a definitive checkpoint")
+        self.require_open()?;
+        self.audio_engine.pause()?;
+        self.checkpoint(Instant::now(), true)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// Forwards to `Audio Engine`; nothing is marked dirty.
     pub fn stop(&self) -> Result<(), String> {
-        todo!("dispatch")
+        self.require_open()?;
+        self.audio_engine.stop()
     }
 
     /// Forwards to `Audio Engine`; on success records `volume` in the
     /// project's `mixer[stem_id]` (a stem with no entry yet starts from
     /// `{ volume: 1.0, mute: false, solo: false }`) and marks it dirty.
     pub fn set_stem_volume(&self, stem_id: &str, volume: f32) -> Result<(), String> {
-        todo!("dispatch, record mixer volume")
+        self.require_open()?;
+        self.audio_engine.set_stem_volume(stem_id, volume)?;
+        self.record_mixer(stem_id, |m| m.volume = volume)
     }
 
     /// Like [`Self::set_stem_volume`], for `mute`.
     pub fn set_stem_mute(&self, stem_id: &str, muted: bool) -> Result<(), String> {
-        todo!("dispatch, record mixer mute")
+        self.require_open()?;
+        self.audio_engine.set_stem_mute(stem_id, muted)?;
+        self.record_mixer(stem_id, |m| m.mute = muted)
     }
 
     /// Like [`Self::set_stem_volume`], for `solo`.
     pub fn set_stem_solo(&self, stem_id: &str, solo: bool) -> Result<(), String> {
-        todo!("dispatch, record mixer solo")
+        self.require_open()?;
+        self.audio_engine.set_stem_solo(stem_id, solo)?;
+        self.record_mixer(stem_id, |m| m.solo = solo)
     }
 }
 
@@ -362,8 +478,11 @@ mod tests {
 
     /// Records what it was handed; on success returns one entry per file
     /// (id = file stem, 2.5 s long), on failure an `Unsupported` error.
+    /// (project dir, ids of the existing stems, files to import)
+    type ImportCall = (PathBuf, Vec<String>, Vec<PathBuf>);
+
     struct FakeImporter {
-        calls: Mutex<Vec<(PathBuf, Vec<String>, Vec<PathBuf>)>>,
+        calls: Mutex<Vec<ImportCall>>,
         fail: bool,
     }
 
@@ -455,7 +574,9 @@ mod tests {
     /// A fixture with a freshly created project "Song" open in `dir/song`.
     fn with_project(result: Result<(), String>) -> Fixture {
         let f = fixture(result);
-        f.session.create_project(&f.dir.join("song"), "Song").unwrap();
+        f.session
+            .create_project(&f.dir.join("song"), "Song")
+            .unwrap();
         f
     }
 
@@ -480,7 +601,10 @@ mod tests {
     #[test]
     fn create_project_writes_an_empty_project_and_opens_it() {
         let f = fixture(Ok(()));
-        let project = f.session.create_project(&f.dir.join("song"), "Song").unwrap();
+        let project = f
+            .session
+            .create_project(&f.dir.join("song"), "Song")
+            .unwrap();
 
         assert_eq!(project.name, "Song");
         assert_eq!(project.schema_version, CURRENT_SCHEMA_VERSION);
@@ -521,7 +645,11 @@ mod tests {
     fn close_project_saves_unsaved_changes_first() {
         let f = with_project(Ok(()));
         f.session.set_markers(1.0, 4.0).unwrap();
-        assert_eq!(saved(&f).loop_range, None, "nothing written before the debounce");
+        assert_eq!(
+            saved(&f).loop_range,
+            None,
+            "nothing written before the debounce"
+        );
 
         f.session.close_project().unwrap();
 
@@ -588,7 +716,10 @@ mod tests {
             .unwrap();
         let second = f
             .session
-            .import_stems(vec![PathBuf::from("/a/drums.wav"), PathBuf::from("/a/keys.wav")])
+            .import_stems(vec![
+                PathBuf::from("/a/drums.wav"),
+                PathBuf::from("/a/keys.wav"),
+            ])
             .unwrap();
 
         assert_eq!(first.len(), 1);
@@ -597,7 +728,10 @@ mod tests {
         assert_eq!(calls[0].0, f.dir.join("song"));
         assert!(calls[0].1.is_empty());
         assert_eq!(calls[1].1, vec!["bass"]);
-        assert_eq!(calls[1].2, vec![PathBuf::from("/a/drums.wav"), PathBuf::from("/a/keys.wav")]);
+        assert_eq!(
+            calls[1].2,
+            vec![PathBuf::from("/a/drums.wav"), PathBuf::from("/a/keys.wav")]
+        );
         assert!(f.loop_manager.calls().is_empty());
         assert!(f.audio_engine.calls().is_empty());
 
@@ -609,7 +743,9 @@ mod tests {
     #[test]
     fn a_failed_import_returns_the_importers_message_and_changes_nothing() {
         let f = fixture_with(Ok(()), true);
-        f.session.create_project(&f.dir.join("song"), "Song").unwrap();
+        f.session
+            .create_project(&f.dir.join("song"), "Song")
+            .unwrap();
 
         let err = f
             .session
@@ -624,7 +760,10 @@ mod tests {
             }
             .to_string()
         );
-        assert!(!f.session.checkpoint(Instant::now(), true).unwrap(), "not dirty");
+        assert!(
+            !f.session.checkpoint(Instant::now(), true).unwrap(),
+            "not dirty"
+        );
     }
 
     #[test]
@@ -715,7 +854,10 @@ mod tests {
         assert_eq!(f.session.set_stem_mute("bass", true), Err("boom".into()));
         assert_eq!(f.session.set_stem_solo("bass", true), Err("boom".into()));
 
-        assert!(!f.session.checkpoint(Instant::now(), true).unwrap(), "not dirty");
+        assert!(
+            !f.session.checkpoint(Instant::now(), true).unwrap(),
+            "not dirty"
+        );
     }
 
     // ---- checkpoints ---------------------------------------------------
@@ -730,9 +872,15 @@ mod tests {
         assert!(!f.session.checkpoint(t0, false).unwrap());
         assert!(saved(&f).mixer.is_empty());
 
-        assert!(f.session.checkpoint(t0 + DEBOUNCE + DEBOUNCE, false).unwrap());
+        assert!(f
+            .session
+            .checkpoint(t0 + DEBOUNCE + DEBOUNCE, false)
+            .unwrap());
         assert_eq!(saved(&f).mixer["bass"].volume, 0.2);
-        assert!(!f.session.checkpoint(t0 + DEBOUNCE * 3, false).unwrap(), "clean now");
+        assert!(
+            !f.session.checkpoint(t0 + DEBOUNCE * 3, false).unwrap(),
+            "clean now"
+        );
     }
 
     #[test]
