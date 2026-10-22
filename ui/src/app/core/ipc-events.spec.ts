@@ -44,4 +44,15 @@ describe('IpcEvents', () => {
 
     expect(events.scoreParseError()).toEqual({ line: 3, message: 'two chords' });
   });
+
+  it('drops the previous score when a reload fails', async () => {
+    // Added after review.
+    const events = TestBed.inject(IpcEvents);
+    await events.listen();
+    handlers.get('score_loaded')!({ payload: { title: 'Old' } as unknown as Score });
+
+    handlers.get('score_parse_error')!({ payload: { line: 1, message: 'broken' } });
+
+    expect(events.score()).toBeNull();
+  });
 });

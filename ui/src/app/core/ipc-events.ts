@@ -58,6 +58,9 @@ export class IpcEvents {
       this._score.set(event.payload);
     });
     await window.__TAURI__.event.listen<ScoreParseErrorPayload>('score_parse_error', (event) => {
+      // The core publishes one of the two per load: a failed load means
+      // there's no current score, not that the previous one still holds.
+      this._score.set(null);
       this._scoreParseError.set(event.payload);
     });
   }
