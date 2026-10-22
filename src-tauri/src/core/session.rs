@@ -65,6 +65,12 @@ pub trait LoopManagerCommands: Send + Sync {
     fn restore(&self, markers: Option<LoopRange>, project_duration_sec: f64);
 }
 
+/// What Session asks of `Score Metadata Manager`: publishing the open
+/// project's score (`score_loaded` or `score_parse_error`).
+pub trait ScoreMetadataCommands: Send + Sync {
+    fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64);
+}
+
 /// The `Commands` Session forwards to `Audio Engine` (transport + mixer).
 pub trait AudioEngineCommands: Send + Sync {
     fn play(&self) -> Result<(), String>;
@@ -101,6 +107,12 @@ impl LoopManagerCommands for LoopManager {
 
     fn restore(&self, markers: Option<LoopRange>, project_duration_sec: f64) {
         LoopManager::restore(self, markers, project_duration_sec)
+    }
+}
+
+impl ScoreMetadataCommands for ScoreMetadataManager {
+    fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64) {
+        ScoreMetadataManager::publish_score(self, project_dir, score_file, project_duration_sec)
     }
 }
 
@@ -149,10 +161,7 @@ pub struct Session {
     loop_manager: Arc<dyn LoopManagerCommands>,
     audio_engine: Arc<dyn AudioEngineCommands>,
     persistence: Arc<ProjectPersistence>,
-    // Not dispatched to by any Command yet (score loading lands with
-    // TASK-012) -- held concretely, with no trait, until one does.
-    #[allow(dead_code)]
-    score_metadata: Arc<ScoreMetadataManager>,
+    score_metadata: Arc<dyn ScoreMetadataCommands>,
     // Session's one `Mutex` -- see
     // docs/architecture.md#design-note-concurrency-model-for-shared-state.
     // Commands only change it one at a time (the queue), so the only other
@@ -174,7 +183,7 @@ impl Session {
         loop_manager: Arc<dyn LoopManagerCommands>,
         audio_engine: Arc<dyn AudioEngineCommands>,
         persistence: Arc<ProjectPersistence>,
-        score_metadata: Arc<ScoreMetadataManager>,
+        score_metadata: Arc<dyn ScoreMetadataCommands>,
     ) -> Self {
         Self {
             stem_importer,
@@ -303,7 +312,10 @@ impl Session {
     /// project file at `path` with `ProjectPersistence::load_project` (its
     /// error's `Display` is the message), then opens it in place of the
     /// current one. When saving or loading fails, the current project stays
-    /// open. Returns the loaded project.
+    /// open. A project with a `score` then has it published by `Score
+    /// Metadata Manager` (`score_loaded` or `score_parse_error`), with the
+    /// `.cho` named relative to the project's folder. Returns the loaded
+    /// project.
     pub fn open_project(&self, path: &Path) -> Result<Project, String> {
         // Save the current project before reading: reopening the same file
         // must load what's in memory now, not an older version on disk.
@@ -320,6 +332,13 @@ impl Session {
             path: path.to_path_buf(),
             project: project.clone(),
         });
+        // Published after the project is open, outside the lock: a broken
+        // score is a `score_parse_error` event, never a failed open.
+        if let Some(score) = &project.score {
+            let dir = path.parent().unwrap_or_else(|| Path::new("."));
+            self.score_metadata
+                .publish_score(dir, score, project.duration_sec());
+        }
         Ok(project)
     }
 
@@ -559,6 +578,22 @@ mod tests {
         }
     }
 
+    /// Records each score it's asked to publish.
+    #[derive(Default)]
+    struct FakeScores {
+        published: Mutex<Vec<(PathBuf, String, f64)>>,
+    }
+
+    impl ScoreMetadataCommands for FakeScores {
+        fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64) {
+            self.published.lock().unwrap().push((
+                project_dir.to_path_buf(),
+                score_file.to_string(),
+                project_duration_sec,
+            ));
+        }
+    }
+
     /// A Session wired to separate fakes and a real `Project Persistence`
     /// with a one-hour debounce, so only a definitive checkpoint (or a
     /// `now` an hour later) writes.
@@ -567,6 +602,7 @@ mod tests {
         importer: Arc<FakeImporter>,
         loop_manager: Arc<FakeModule>,
         audio_engine: Arc<FakeModule>,
+        scores: Arc<FakeScores>,
         dir: PathBuf,
     }
 
@@ -579,6 +615,7 @@ mod tests {
         });
         let loop_manager = FakeModule::returning(result.clone());
         let audio_engine = FakeModule::returning(result);
+        let scores = Arc::new(FakeScores::default());
         let session = Session::new(
             importer.clone(),
             loop_manager.clone(),
@@ -588,7 +625,7 @@ mod tests {
                 vec![],
                 DEBOUNCE,
             )),
-            Arc::new(ScoreMetadataManager::new()),
+            scores.clone(),
         );
         let dir = std::env::temp_dir().join(format!(
             "stemloft-session-{}-{}",
@@ -603,6 +640,7 @@ mod tests {
             importer,
             loop_manager,
             audio_engine,
+            scores,
             dir,
         }
     }
@@ -872,6 +910,37 @@ mod tests {
 
         assert!(f.session.is_project_open());
         assert_eq!(*f.loop_manager.restored.lock().unwrap(), vec![None]); // created only
+    }
+
+    #[test]
+    fn opening_a_project_with_a_score_publishes_it() {
+        let f = with_project(Ok(()));
+        f.session
+            .import_stems(vec![PathBuf::from("/a/bass.wav")])
+            .unwrap();
+        f.session.close_project().unwrap();
+        // `score` is set by hand in the project file in v1.
+        let path = f.dir.join("song").join(PROJECT_FILE);
+        let mut project = saved(&f);
+        project.score = Some("song.cho".into());
+        fs::write(&path, serde_json::to_vec(&project).unwrap()).unwrap();
+
+        f.session.open_project(&path).unwrap();
+
+        assert_eq!(
+            *f.scores.published.lock().unwrap(),
+            vec![(f.dir.join("song"), "song.cho".to_string(), 2.5)]
+        );
+    }
+
+    #[test]
+    fn a_project_without_a_score_publishes_nothing() {
+        let f = with_project(Ok(()));
+        f.session.close_project().unwrap();
+        f.session
+            .open_project(&f.dir.join("song").join(PROJECT_FILE))
+            .unwrap();
+        assert!(f.scores.published.lock().unwrap().is_empty());
     }
 
     #[test]

@@ -7,3 +7,4 @@
 - [ ] 1.3 Vitest cobre o destaque de acorde/batida a partir de uma fixture no formato `ChordBeatStream`, e o estado de erro isolado em `score_parse_error`
 - [ ] 1.4 `npm run build` (tsc) e `prettier --check` limpos (via `remote-build-offload`)
 - [ ] 1.5 Revisado pelo `review-angular-shell`
+- [ ] 1.6 Abrir, criar ou fechar um projeto limpa a partitura mostrada, para que os acordes de um projeto anterior nunca fiquem na tela quando o novo não tem partitura (o núcleo não publica nada para um projeto sem partitura; adiado da TASK-012)

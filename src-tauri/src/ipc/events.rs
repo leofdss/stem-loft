@@ -1,20 +1,20 @@
 //! `Events` -- Rust → Angular. A multi-producer notification bus (`Audio
 //! Engine` and `Score Metadata Manager` both publish on it) -- see the
-//! [events table](../../../docs/architecture.md#events-table). Not emitted
-//! by anything yet in this scaffold: these are the payload shapes the real
-//! producers will send once each one exists (`Audio Engine::play` and
-//! friends, `ScoreMetadataManager::load_score`).
+//! [events table](../../../docs/architecture.md#events-table).
+//! [`TauriEvents`] is the Tauri side of `core::events::EventSink`: domain
+//! modules publish through that trait, and this emits the event to the
+//! WebView. So far only `Score Metadata Manager` publishes (`score_loaded`,
+//! `score_parse_error`); the other payload shapes below wait for their
+//! producer (`Audio Engine`, TASK-010).
 //!
-//! `score_loaded`'s payload (parsed chords, tablature, lyrics, plus
-//! tempo/time/tuning) isn't modeled here yet -- it lands together with
-//! `ScoreMetadataManager::load_score`, see
-//! docs/architecture.md#score-metadata-chords-tablature-and-lyrics and the
-//! `chordpro-format` skill.
-//!
-//! `#![allow(dead_code)]`: every item below is unused until its producer
-//! exists -- see the module doc above. Remove this once the first one
-//! (`event_name::PLAYBACK_PROGRESS`, most likely) is actually emitted.
+//! `#![allow(dead_code)]`: the payloads and names nobody emits yet are
+//! unused until their producer exists. Remove it once the last one is.
 #![allow(dead_code)]
+
+use tauri::{AppHandle, Emitter};
+
+use crate::core::events::EventSink;
+use crate::core::score_metadata::{self, Score};
 
 use serde::Serialize;
 
@@ -75,4 +75,58 @@ pub struct ScoreParseError {
     /// The `.cho` line where parsing failed.
     pub line: u32,
     pub message: String,
+}
+
+/// Emits the core's events to the WebView through Tauri.
+pub struct TauriEvents {
+    app: AppHandle,
+}
+
+impl TauriEvents {
+    pub fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+
+    /// A failed emit (the window is gone) has nobody to tell: logged only.
+    fn emit<P: Serialize + Clone>(&self, name: &str, payload: P) {
+        if let Err(e) = self.app.emit(name, payload) {
+            eprintln!("stemloft: couldn't emit {name}: {e}");
+        }
+    }
+}
+
+impl EventSink for TauriEvents {
+    fn score_loaded(&self, score: &Score) {
+        self.emit(event_name::SCORE_LOADED, score.clone());
+    }
+
+    fn score_parse_error(&self, error: &score_metadata::ScoreParseError) {
+        self.emit(event_name::SCORE_PARSE_ERROR, ScoreParseError::from(error));
+    }
+}
+
+impl From<&score_metadata::ScoreParseError> for ScoreParseError {
+    fn from(error: &score_metadata::ScoreParseError) -> Self {
+        ScoreParseError {
+            line: error.line,
+            message: error.message.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn score_parse_error_has_the_events_table_payload() {
+        let core_error = score_metadata::ScoreParseError {
+            line: 7,
+            message: "two chords".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(ScoreParseError::from(&core_error)).unwrap(),
+            serde_json::json!({ "line": 7, "message": "two chords" })
+        );
+    }
 }
