@@ -69,6 +69,33 @@ pub struct MixerSettings {
     pub solo: bool,
 }
 
+/// A stem nobody has touched yet: full volume, not muted, not soloed.
+impl Default for MixerSettings {
+    fn default() -> Self {
+        MixerSettings {
+            volume: 1.0,
+            mute: false,
+            solo: false,
+        }
+    }
+}
+
+impl Project {
+    /// A new, empty project: a fresh UUID v4 `id`, the current schema, no
+    /// stems, score, loop or mixer settings.
+    pub fn new_empty(name: &str) -> Self {
+        Project {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_owned(),
+            stems: Vec::new(),
+            score: None,
+            loop_range: None,
+            mixer: BTreeMap::new(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum LoadError {
     Io(io::Error),

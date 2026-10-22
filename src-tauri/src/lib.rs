@@ -60,7 +60,12 @@ pub fn run() {
             // Quitting is a definitive event, like closing the project.
             if let tauri::RunEvent::Exit = event {
                 let state = app.state::<AppState>();
-                if let Err(e) = state.session.checkpoint(Instant::now(), true) {
+                // Through the queue, so it runs after any Command still in
+                // flight and saves what that Command changed.
+                let saved = state
+                    .queue
+                    .run(|| state.session.checkpoint(Instant::now(), true));
+                if let Err(e) = saved {
                     eprintln!("stemloft: saving the project on exit failed: {e}");
                 }
             }

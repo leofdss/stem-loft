@@ -25,7 +25,6 @@
 //! definitive events). Commands reach Session one at a time, in arrival
 //! order, through `core::command_queue`.
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -34,9 +33,7 @@ use std::time::Instant;
 
 use super::audio_engine::AudioEngine;
 use super::loop_manager::LoopManager;
-use super::persistence::{
-    LoopRange, MixerSettings, Project, ProjectPersistence, StemEntry, CURRENT_SCHEMA_VERSION,
-};
+use super::persistence::{LoopRange, MixerSettings, Project, ProjectPersistence, StemEntry};
 use super::score_metadata::ScoreMetadataManager;
 use super::stem_importer::{ImportError, StemImporter};
 
@@ -145,6 +142,11 @@ pub struct Session {
     // Commands only change it one at a time (the queue), so the only other
     // party is the checkpoint ticker.
     open_project: Mutex<Option<OpenProject>>,
+    // Serializes whole checkpoints (snapshot, write, mark clean): without
+    // it, a slow ticker write of an older snapshot could land after a
+    // newer definitive one and leave the stale file on disk, marked clean.
+    // Taken before `open_project`, never while holding it.
+    checkpoint_writing: Mutex<()>,
 }
 
 impl Session {
@@ -165,6 +167,7 @@ impl Session {
             persistence,
             score_metadata,
             open_project: Mutex::new(None),
+            checkpoint_writing: Mutex::new(()),
         }
     }
 
@@ -185,8 +188,12 @@ impl Session {
     /// nothing was written, including when no project is open. The token
     /// and the snapshot are taken together under Session's lock, and the
     /// write happens after releasing it -- so a change made meanwhile is
-    /// never marked as saved.
+    /// never marked as saved. Two checkpoints never overlap.
     pub fn checkpoint(&self, now: Instant, definitive: bool) -> io::Result<bool> {
+        let _writing = self
+            .checkpoint_writing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (path, snapshot, token) = {
             let open = self.open();
             let Some(open) = open.as_ref() else {
@@ -228,18 +235,7 @@ impl Session {
         stem_id: &str,
         change: impl FnOnce(&mut MixerSettings),
     ) -> Result<(), String> {
-        self.record_change(|project| {
-            change(
-                project
-                    .mixer
-                    .entry(stem_id.to_owned())
-                    .or_insert(MixerSettings {
-                        volume: 1.0,
-                        mute: false,
-                        solo: false,
-                    }),
-            )
-        })
+        self.record_change(|project| change(project.mixer.entry(stem_id.to_owned()).or_default()))
     }
 
     /// Definitive checkpoint of the open project (if any), then forget it.
@@ -273,15 +269,7 @@ impl Session {
         self.checkpoint(Instant::now(), true)
             .map_err(|e| e.to_string())?;
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        let project = Project {
-            schema_version: CURRENT_SCHEMA_VERSION,
-            id: uuid::Uuid::new_v4().to_string(),
-            name: name.to_owned(),
-            stems: Vec::new(),
-            score: None,
-            loop_range: None,
-            mixer: BTreeMap::new(),
-        };
+        let project = Project::new_empty(name);
         self.persistence
             .save_project(&path, &project)
             .map_err(|e| e.to_string())?;
@@ -292,12 +280,16 @@ impl Session {
         Ok(project)
     }
 
-    /// Loads the project file at `path` with `ProjectPersistence::
-    /// load_project` (its error's `Display` is the message), then closes
-    /// the current project (definitive checkpoint) and opens this one.
-    /// Nothing changes when loading fails or the current project can't be
-    /// saved. Returns the loaded project.
+    /// Saves the current project (definitive checkpoint), loads the
+    /// project file at `path` with `ProjectPersistence::load_project` (its
+    /// error's `Display` is the message), then opens it in place of the
+    /// current one. When saving or loading fails, the current project stays
+    /// open. Returns the loaded project.
     pub fn open_project(&self, path: &Path) -> Result<Project, String> {
+        // Save the current project before reading: reopening the same file
+        // must load what's in memory now, not an older version on disk.
+        self.checkpoint(Instant::now(), true)
+            .map_err(|e| e.to_string())?;
         let project = self
             .persistence
             .load_project(path)
@@ -364,14 +356,17 @@ impl Session {
     }
 
     /// Forwards to `Audio Engine`; on success, pausing is a definitive
-    /// event: a definitive checkpoint at `Instant::now()` (its I/O error,
-    /// if any, comes back as text).
+    /// event: a definitive checkpoint at `Instant::now()`. If that write
+    /// fails the pause still succeeded; the project stays dirty and the
+    /// ticker retries.
     pub fn pause(&self) -> Result<(), String> {
         self.require_open()?;
         self.audio_engine.pause()?;
-        self.checkpoint(Instant::now(), true)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+        // Playback did pause, so that's the answer. A failed save leaves
+        // the project dirty for the ticker to retry; it doesn't turn a
+        // successful pause into an error.
+        let _ = self.checkpoint(Instant::now(), true);
+        Ok(())
     }
 
     /// Forwards to `Audio Engine`; nothing is marked dirty.
@@ -417,6 +412,7 @@ mod tests {
     // own file -- not here.
 
     use super::*;
+    use crate::core::persistence::CURRENT_SCHEMA_VERSION;
     use std::time::Duration;
 
     /// One fake for the loop manager and the audio engine: every call is
@@ -820,7 +816,7 @@ mod tests {
         f.session.checkpoint(Instant::now(), true).unwrap();
 
         let mixer = saved(&f).mixer;
-        let expected: BTreeMap<String, MixerSettings> = [
+        let expected: std::collections::BTreeMap<String, MixerSettings> = [
             (
                 "bass".to_string(),
                 MixerSettings {
@@ -899,6 +895,42 @@ mod tests {
         f.session.play().unwrap();
         f.session.stop().unwrap();
         assert!(!f.session.checkpoint(Instant::now(), true).unwrap());
+    }
+
+    #[test]
+    fn concurrent_checkpoints_never_leave_an_older_snapshot_on_disk() {
+        // Added after review: the ticker and a definitive checkpoint
+        // racing used to be able to rename an older snapshot last.
+        let f = Arc::new(with_project(Ok(())));
+        let ticker = {
+            let f = Arc::clone(&f);
+            std::thread::spawn(move || {
+                for _ in 0..300 {
+                    let _ = f.session.checkpoint(Instant::now() + DEBOUNCE * 2, false);
+                }
+            })
+        };
+        for i in 0..300 {
+            f.session.set_stem_volume("bass", i as f32).unwrap();
+            f.session.checkpoint(Instant::now(), true).unwrap();
+        }
+        ticker.join().unwrap();
+
+        assert_eq!(saved(&f).mixer["bass"].volume, 299.0);
+    }
+
+    #[test]
+    fn reopening_the_open_project_keeps_its_unsaved_changes() {
+        // Added after review.
+        let f = with_project(Ok(()));
+        f.session.set_markers(1.0, 2.0).unwrap();
+
+        let project = f
+            .session
+            .open_project(&f.dir.join("song").join(PROJECT_FILE))
+            .unwrap();
+
+        assert!(project.loop_range.is_some());
     }
 
     #[test]

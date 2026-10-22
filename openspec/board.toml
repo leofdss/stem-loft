@@ -55,7 +55,7 @@ suitable_for = "agent"
 playbooks = ["realtime-audio-safety"]
 
 [task-009-ipc-commands]
-status = "backlog"
+status = "review"
 branch = "feat/ipc-commands"
 depends_on = ["TASK-001"]
 suitable_for = "agent"
