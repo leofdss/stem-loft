@@ -135,51 +135,75 @@ precisaria não estão lá).
 
 ## Modelos locais
 
+> **Experimental — fora do fluxo padrão.** Numa GPU com ~8 GB de VRAM, os
+> modelos que cabem não concluíram tarefas reais nem dentro do
+> `scripts/llm_task.py`, então a delegação vai para um modelo hospedado
+> menor (AGENTS.md, "Choosing who does the work"). Tudo abaixo continua
+> funcionando para um novo teste com um hardware maior.
+
 O mesmo host pode servir modelos de linguagem locais na GPU dele, para que
 qualquer pessoa ou agente de IA possa passar uma tarefa verificável
-mecanicamente para um modelo que não custa nada por chamada e nunca sai da
-tailnet. Ele roda o [Ollama](https://ollama.com/) como um serviço Podman
+mecanicamente para um modelo que não custa nada por chamada, não tem cota
+de uso e não exige conta em nenhum provedor de IA. As requisições a ele
+ficam dentro da tailnet — mas isso só mantém o código privado se nenhum
+modelo hospedado estiver no mesmo fluxo: quando um assistente hospedado
+escreve os testes ou revisa o resultado, o código já saiu da máquina. Ele
+roda o [Ollama](https://ollama.com/) como um serviço Podman
 Quadlet sem root (`stemloft-ollama`), com a API presa só ao IP do Tailscale
-do host e os modelos em nuvem desligados.
+do host e os modelos em nuvem desligados. A GPU é detectada pela versão
+ROCm do Ollama (AMD); para outro fabricante, mude a tag da imagem e os
+dispositivos em [`ollama/ollama.container.in`](ollama/ollama.container.in).
 
 ```bash
 distrobox/remote/ollama/install.sh        # install/update the service + pull the models
+distrobox/remote/power.sh up ollama       # start it for a work session
 python3 scripts/local_llm.py --status     # is it up, which models are pulled/loaded
+distrobox/remote/power.sh down            # done: stop ollama and the build container
 ```
+
+**Nada roda enquanto ninguém trabalha.** O host de build costuma ser a
+máquina pessoal de alguém, usada para outras coisas também, então o
+serviço nunca sobe no boot (o `ollama.container.in` não tem seção
+`[Install]`), descarrega um modelo ocioso depois de 5 minutos, e o
+`check.sh` desliga o container de build quando o passe termina. Quem
+encerra uma sessão de trabalho — uma pessoa ou um agente de IA — roda
+`distrobox/remote/power.sh down`; o `power.sh status` mostra o que está
+rodando e quanto de VRAM está em uso.
 
 Depois, adicione ao seu `host.local` a URL que o `install.sh` imprime
 (`export STEMLOFT_OLLAMA_URL=http://<ip-do-tailscale>:11434`). Quem chama
 pede um **papel**, nunca um modelo — os papéis ficam em
-[`ollama/models.toml`](ollama/models.toml):
+[`ollama/models.toml`](ollama/models.toml), cujos padrões cabem numa GPU
+com cerca de 8 GB de VRAM (ajuste para a sua e rode o `install.sh` de
+novo):
 
-| Papel | Modelo | Medido na RX 7600 (8 GB), contexto de 16k | Use para |
-|---|---|---|---|
-| `quick` | `qwen3:8b` | 5,8 GB, todo na VRAM · 36 tok/s | mensagens de commit, resumos de PR, classificar um diff |
-| `translate` | `qwen3:8b` | o mesmo modelo, sem recarregar | rascunhos em pt-BR via `scripts/translate_md.py` |
-| `code` | `qwen2.5-coder:7b` | 4,8 GB, todo na VRAM · 45 tok/s | edições mecânicas validadas por `cargo check`/`tsc`/testes |
-| `heavy` | `qwen3-coder:30b` | 6,7 de 18,3 GB na VRAM, o resto na RAM · 27 tok/s | sessões agênticas mais longas, com contexto maior |
+| Papel | Modelo padrão | Use para |
+|---|---|---|
+| `quick` | `qwen3:8b` | mensagens de commit, resumos de PR, classificar um diff |
+| `translate` | `qwen3:8b` (o mesmo modelo, sem recarregar) | rascunhos em pt-BR via `scripts/translate_md.py` |
+| `code` | `qwen2.5-coder:7b` | edições mecânicas validadas por `cargo check`/`tsc`/testes, por exemplo pelo `scripts/llm_task.py` |
+| `heavy` | `qwen3-coder:30b` | sessões mais longas, com contexto maior (um MoE que pode transbordar da VRAM para a RAM) |
 
-O que as medições também mostraram, e os scripts agora garantem:
+Regras de projeto que os scripts garantem, porque um modelo não as segue
+de forma confiável só porque foi pedido:
 
-- **Prompt não preserva estrutura.** Instruído a manter títulos e
-  `SHALL`/`MUST` em inglês, o `qwen3:8b` ainda traduziu `## Purpose` e
-  `### Requirement:`. Por isso o `scripts/translate_md.py` nunca manda a
-  estrutura para o modelo — só trechos de prosa, em JSON com schema — e
-  rejeita um trecho cujo código inline ou palavras-chave mudaram; o
-  `check_bilingual_parity.py` falha se a estrutura divergir mesmo assim.
-- **Tags só de raciocínio ignoram `think=false`.** O `qwen3:4b` (uma
-  variante que sempre raciocina) divagou numa tarefa de uma linha; o
-  `qwen3:4b-instruct` foi rápido, mas inventou um tipo de commit `file:`.
-  Os dois foram descartados.
-- **Nunca deixe o mesmo modelo escrever o código *e* o teste dele.** Num
-  teste em Rust julgado pelo `cargo test`, os dois modelos de código
-  acertaram a implementação e erraram o valor esperado de um teste —
-  exatamente o caso em que um modelo "corrigiria" código certo para bater
-  com o próprio teste errado.
+- **O modelo nunca vê a estrutura que não pode mudar.** O
+  `scripts/translate_md.py` envia só trechos de prosa (JSON com schema) e
+  rejeita um trecho cujo código inline ou `SHALL`/`MUST` mudou; o
+  `scripts/llm_task.py` congela os testes (`--freeze-from`) e remove os
+  números de linha que um modelo devolve.
+- **O mesmo modelo nunca escreve o código e o teste que o julga** — senão
+  ele pode "corrigir" código certo para bater com a própria expectativa
+  errada.
+- **Verificações travadas são encerradas**, não esperadas: o `llm_task.py`
+  roda a verificação no próprio grupo de processos, com timeout.
+- **A saída é um rascunho.** Um script, um modelo mais forte ou uma pessoa
+  confere antes de ela entrar (veja "Choosing who does the work" no
+  [`AGENTS.md`](../../AGENTS.md)).
 
-A saída de um modelo local é um rascunho: um script ou uma pessoa confere
-antes de ela entrar (veja "Choosing who does the work" no
-[`AGENTS.md`](../../AGENTS.md)).
+Guarde as medições do seu próprio host — velocidades, quais modelos cabem,
+execuções de laboratório — em `distrobox/remote/lab.local.md` (ignorado
+pelo git, como o `host.local`): elas descrevem uma máquina, não o projeto.
 
 ## O que isso deliberadamente não faz
 

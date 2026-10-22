@@ -1,32 +1,32 @@
 # Which local model does which kind of work -- read by scripts/local_llm.py
 # and by distrobox/remote/ollama/install.sh (pulls every role with pull = true).
 #
-# Sized for the reference host: AMD RX 7600 (8 GB VRAM, ~7 GB free with a
-# desktop session), 32 GB RAM. Measured numbers are in
-# distrobox/remote/README.md ("Local models"). Change a role's model here,
-# re-run install.sh, and every caller follows -- nobody hardcodes a model.
+# Defaults sized for a GPU with ~8 GB of VRAM. Change a role's model here
+# for your hardware, re-run install.sh, and every caller follows -- nobody
+# hardcodes a model. Record what you measure on your own host in
+# distrobox/remote/lab.local.md (gitignored).
 #
 # Only hand a local model work with a mechanical check behind it (a test,
 # cargo check, tsc, the bilingual parity checker...). See AGENTS.md,
 # "Choosing who does the work".
 
 [roles.quick]
-# Same model as `translate` on purpose: one model stays loaded in VRAM, and
-# the 4B options measured worse -- qwen3:4b (a thinking-only tag) ignores
-# think=false and rambles, qwen3:4b-instruct invented a `file:` commit type.
+# Same model as `translate` on purpose: one model stays loaded in VRAM.
+# Avoid thinking-only tags here: they ignore think=false and ramble.
 model = "qwen3:8b"
 use = "Commit messages, PR summaries, classifying a diff, short rewrites."
 think = false
 pull = true
 
 [roles.code]
-# Same pass rate as qwen3-coder:30b on the measured Rust probe, at half the
-# latency and fully inside VRAM. Both wrote a wrong *test expectation* --
-# never let one model write both the code and the test that judges it.
+# Fits fully in ~8 GB with 16k context. Never let one model write both the
+# code and the test that judges it.
 model = "qwen2.5-coder:7b"
 use = "Mechanical code edits and test scaffolding gated by cargo check / tsc / tests."
 think = false
 pull = true
+# Sent with every request; 16k fits the whole model + KV cache in VRAM.
+options = { num_ctx = 16384, temperature = 0.2, num_predict = 8192 }
 
 [roles.translate]
 model = "qwen3:8b"
@@ -36,6 +36,7 @@ pull = true
 
 [roles.heavy]
 model = "qwen3-coder:30b"
-use = "Longer agentic sessions over a bigger context (e.g. driven by an agent CLI pointed at this server). MoE with 3B active: ~2/3 of it lives in RAM yet still generates ~27 tok/s; prompt processing is ~3x slower than `code`."
+use = "Longer agentic sessions over a bigger context (e.g. driven by an agent CLI pointed at this server). MoE with 3B active: on an 8 GB GPU most of it lives in RAM, so it is slower than `code`, especially at reading long prompts."
 think = false
 pull = true
+options = { num_ctx = 16384, temperature = 0.2, num_predict = 8192 }

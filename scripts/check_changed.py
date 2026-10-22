@@ -177,6 +177,8 @@ def check_generated(paths: list[Path], f: Findings) -> None:
 
 def check_readme_notes(paths: list[Path], f: Findings) -> None:
     for r in (rel(p) for p in paths):
+        if r.endswith(".local.md") or ".local/" in r:  # personal, gitignored notes
+            continue
         if r.startswith(README_WATCHED_PREFIXES):
             f.note(f"README.md may need a matching update after this change to {r} -- check its summary is still accurate.")
 

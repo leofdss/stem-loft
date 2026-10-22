@@ -12,13 +12,6 @@
 # docs/kanban.html is generated from this file plus the changes:
 #   python3 scripts/openspec_to_kanban.py
 
-[task-002-project-persistence]
-status = "backlog"
-branch = "feat/project-persistence"
-depends_on = ["TASK-001"]
-suitable_for = "agent"
-playbooks = ["atomic-persistence"]
-
 [task-003-stem-importer]
 status = "backlog"
 branch = "feat/stem-importer"
