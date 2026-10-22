@@ -337,6 +337,25 @@ class CheckFrozenTests(unittest.TestCase):
             f.write_text("pub fn a() {}\n")
             self.assertEqual(check_frozen.compare(f, "#[cfg(test)]", "HEAD")[0], 2)
 
+    def test_rustfmt_reformatting_alone_is_not_a_change(self):
+        import shutil
+        if shutil.which("rustfmt") is None:
+            self.skipTest("rustfmt not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.repo_with_contract(Path(tmp))
+            f.write_text(f.read_text().replace(
+                "mod tests { #[test] fn t() { assert_eq!(1, 1); } }",
+                "mod tests {\n    #[test]\n    fn t() {\n        assert_eq!(1, 1);\n    }\n}"))
+            code, message = check_frozen.compare(f, "#[cfg(test)]", "HEAD")
+            self.assertEqual(code, 0, message)
+            self.assertIn("formatting only", message)
+
+    def test_a_real_edit_still_fails_after_rustfmt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.repo_with_contract(Path(tmp))
+            f.write_text(f.read_text().replace("assert_eq!(1, 1);", "assert_eq!(1, 1) ;  // ok\n"))
+            self.assertEqual(check_frozen.compare(f, "#[cfg(test)]", "HEAD")[0], 1)
+
     def test_an_uncommitted_contract_cant_be_checked(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.repo_with_contract(Path(tmp))
