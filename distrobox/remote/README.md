@@ -128,6 +128,25 @@ unlike `cargo-remote` — the point is fast feedback on errors/warnings/test
 results, not running the remote-built binary locally, since the ALSA/window
 handles it'd need aren't there).
 
+### Parallel worktrees
+
+Every script here works the same from a linked `git worktree` (one per
+change, AGENTS.md "Working in parallel"), through `lib.sh`:
+
+- `host.local` is read from the main checkout when the worktree has none.
+- The worktree syncs to its own remote directory,
+  `<STEMLOFT_REMOTE_PATH>-worktrees/<worktree folder name>`, so parallel
+  workers never overwrite each other's files or wait on the same cargo
+  lock. Its first sync seeds `src-tauri/target/` and `ui/node_modules/`
+  from the main checkout's remote copy, so it skips a cold build.
+- Running several `check.sh` at once, set `STEMLOFT_KEEP_BUILD_UP=1` so
+  the first one to finish doesn't stop the container under the others,
+  and run `power.sh down build` yourself once they're all done.
+
+Old worktree directories on the host aren't cleaned up automatically:
+`ssh <host> rm -rf <STEMLOFT_REMOTE_PATH>-worktrees/<name>` once a branch
+is merged.
+
 ## Local models
 
 > **Experimental — not part of the default workflow.** On a GPU with

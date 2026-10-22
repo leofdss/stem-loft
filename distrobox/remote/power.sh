@@ -14,8 +14,8 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=/dev/null
-[[ -f "$DIR/host.local" ]] && source "$DIR/host.local"
+# shellcheck source=lib.sh
+source "$DIR/lib.sh"
 : "${STEMLOFT_REMOTE_HOST:?Set STEMLOFT_REMOTE_HOST (see distrobox/remote/host.local.example)}"
 
 action="${1:-status}"

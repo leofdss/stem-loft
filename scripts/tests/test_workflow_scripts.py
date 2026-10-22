@@ -347,3 +347,64 @@ class CheckFrozenTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RemoteWorktreeTests(unittest.TestCase):
+    """distrobox/remote/lib.sh and check_remote_image.py, run from a linked
+    git worktree: host.local comes from the main checkout, and the remote
+    copy gets its own directory."""
+
+    def make_repo_with_worktree(self, root: Path) -> tuple[Path, Path]:
+        import shutil
+        import subprocess
+        main = root / "main"
+        (main / "distrobox" / "remote").mkdir(parents=True)
+        shutil.copy(Path(__file__).resolve().parents[2] / "distrobox" / "remote" / "lib.sh",
+                    main / "distrobox" / "remote" / "lib.sh")
+        def git(*args, cwd=main):
+            subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+        git("init", "-q")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        git("config", "commit.gpgsign", "false")
+        git("config", "core.hooksPath", "/dev/null")
+        git("add", ".")
+        git("commit", "-q", "-m", "chore: init")
+        (main / "distrobox" / "remote" / "host.local").write_text(
+            "export STEMLOFT_REMOTE_HOST=me@box\nexport STEMLOFT_REMOTE_PATH=/srv/stem-loft/\n")
+        worktree = root / "wt-cho"
+        git("worktree", "add", "-q", str(worktree))
+        return main, worktree
+
+    def source_lib(self, checkout: Path) -> str:
+        import subprocess
+        return subprocess.run(
+            ["bash", "-c", 'source "$1/distrobox/remote/lib.sh" && '
+             'printf "%s|%s|%s" "$STEMLOFT_REMOTE_HOST" "$REMOTE_ROOT" "$STEMLOFT_IS_WORKTREE"',
+             "_", str(checkout)],
+            capture_output=True, text=True, check=True).stdout
+
+    def test_main_checkout_uses_the_configured_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            main, _ = self.make_repo_with_worktree(Path(tmp))
+            self.assertEqual(self.source_lib(main), "me@box|/srv/stem-loft|0")
+
+    def test_worktree_reads_main_host_local_and_gets_its_own_remote_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, worktree = self.make_repo_with_worktree(Path(tmp))
+            self.assertEqual(self.source_lib(worktree),
+                             "me@box|/srv/stem-loft-worktrees/wt-cho|1")
+
+    def test_image_check_finds_host_local_from_a_worktree(self):
+        import check_remote_image
+        with tempfile.TemporaryDirectory() as tmp:
+            main, worktree = self.make_repo_with_worktree(Path(tmp))
+            saved = check_remote_image.REPO_ROOT, check_remote_image.HOST_LOCAL
+            try:
+                check_remote_image.REPO_ROOT = worktree
+                check_remote_image.HOST_LOCAL = worktree / "distrobox" / "remote" / "host.local"
+                self.assertEqual(check_remote_image.host_local_path().resolve(),
+                                 (main / "distrobox" / "remote" / "host.local").resolve())
+                self.assertEqual(check_remote_image.read_remote_host(), "me@box")
+            finally:
+                check_remote_image.REPO_ROOT, check_remote_image.HOST_LOCAL = saved
