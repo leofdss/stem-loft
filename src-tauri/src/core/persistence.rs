@@ -272,10 +272,31 @@ impl ProjectPersistence {
         self.atomic_write_with_hook(path, contents, || Ok(()))
     }
 
+    /// [`Self::atomic_write`] for contents too big to hold in memory (an
+    /// imported stem): `write` streams them into the temp file. Same
+    /// guarantee -- if `write` fails, the temp file is removed and `path` is
+    /// left as it was.
+    pub fn atomic_write_with(
+        &self,
+        path: &Path,
+        write: impl FnOnce(&mut fs::File) -> io::Result<()>,
+    ) -> io::Result<()> {
+        self.atomic_write_streaming(path, write, || Ok(()))
+    }
+
     fn atomic_write_with_hook(
         &self,
         path: &Path,
         contents: &[u8],
+        before_rename: impl FnOnce() -> io::Result<()>,
+    ) -> io::Result<()> {
+        self.atomic_write_streaming(path, |file| file.write_all(contents), before_rename)
+    }
+
+    fn atomic_write_streaming(
+        &self,
+        path: &Path,
+        write: impl FnOnce(&mut fs::File) -> io::Result<()>,
         before_rename: impl FnOnce() -> io::Result<()>,
     ) -> io::Result<()> {
         let dir = path.parent().ok_or_else(|| {
@@ -295,7 +316,7 @@ impl ProjectPersistence {
 
         let result = (|| {
             let mut file = fs::File::create(&temp_path)?;
-            file.write_all(contents)?;
+            write(&mut file)?;
             file.sync_all()?;
             drop(file);
             before_rename()?;
@@ -430,6 +451,41 @@ mod tests {
             other_files(&dir, "project.json").is_empty(),
             "a failed write must clean up its temp file"
         );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn atomic_write_with_streams_into_place() {
+        let dir = temp_dir("stream");
+        let path = dir.join("bass.wav");
+
+        ProjectPersistence::new()
+            .atomic_write_with(&path, |file| {
+                file.write_all(b"RIFF")?;
+                file.write_all(b"....")
+            })
+            .unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"RIFF....");
+        assert!(other_files(&dir, "bass.wav").is_empty());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_failed_streaming_write_leaves_the_previous_file_and_no_temp() {
+        let dir = temp_dir("stream-fail");
+        let path = dir.join("bass.wav");
+        let persistence = ProjectPersistence::new();
+        persistence.atomic_write(&path, b"previous").unwrap();
+
+        let result = persistence.atomic_write_with(&path, |file| {
+            file.write_all(b"half a stem")?;
+            Err(io::Error::other("source file vanished mid-copy"))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"previous");
+        assert!(other_files(&dir, "bass.wav").is_empty());
         fs::remove_dir_all(&dir).ok();
     }
 
