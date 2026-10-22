@@ -69,7 +69,7 @@ suitable_for = "agent"
 playbooks = ["add-ipc-contract"]
 
 [task-011-cho-parser]
-status = "backlog"
+status = "review"
 branch = "feat/cho-parser"
 depends_on = []
 suitable_for = "agent"

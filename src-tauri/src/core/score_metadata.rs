@@ -216,7 +216,9 @@ fn parse_time_anchor(value: &str) -> Result<f64, String> {
     let (minute, rest) = value.split_once(':').ok_or_else(bad)?;
     let (second, hundredth) = rest.split_once('.').ok_or_else(bad)?;
     let minute = digits(minute).ok_or_else(bad)?;
-    let second = digits(second).filter(|_| second.len() == 2).ok_or_else(bad)?;
+    let second = digits(second)
+        .filter(|_| second.len() == 2)
+        .ok_or_else(bad)?;
     let hundredth = digits(hundredth)
         .filter(|_| hundredth.len() == 2)
         .ok_or_else(bad)?;
@@ -258,7 +260,9 @@ fn parse_tempo(value: &str) -> Result<f64, String> {
     if tempo.is_finite() && tempo > 0.0 {
         Ok(tempo)
     } else {
-        Err(format!("tempo must be a positive, finite number, got `{value}`"))
+        Err(format!(
+            "tempo must be a positive, finite number, got `{value}`"
+        ))
     }
 }
 
@@ -270,17 +274,15 @@ fn parse_time_signature(value: &str) -> Result<TimeSignature, String> {
             .and_then(|n| u32::try_from(n).ok())
             .filter(|n| *n > 0)
     };
-    let (num, den) = value.split_once('/').ok_or_else(|| {
-        format!("time must be `numerator/denominator`, got `{value}`")
-    })?;
+    let (num, den) = value
+        .split_once('/')
+        .ok_or_else(|| format!("time must be `numerator/denominator`, got `{value}`"))?;
     match (part(num), part(den)) {
         (Some(numerator), Some(denominator)) => Ok(TimeSignature {
             numerator,
             denominator,
         }),
-        _ => Err(format!(
-            "time must be two integers above 0, got `{value}`"
-        )),
+        _ => Err(format!("time must be two integers above 0, got `{value}`")),
     }
 }
 
@@ -392,31 +394,30 @@ fn parse_tab_note(token: &str) -> Result<Vec<TabStep>, String> {
     let mut steps = Vec::new();
     let mut bent = false;
 
-    let fret = |chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
-                after: &str|
-     -> Result<u8, String> {
-        let mut digits = String::new();
-        while digits.len() < 2 {
-            match chars.peek() {
-                Some(c) if c.is_ascii_digit() => {
-                    digits.push(*c);
-                    chars.next();
+    let fret =
+        |chars: &mut std::iter::Peekable<std::str::Chars<'_>>, after: &str| -> Result<u8, String> {
+            let mut digits = String::new();
+            while digits.len() < 2 {
+                match chars.peek() {
+                    Some(c) if c.is_ascii_digit() => {
+                        digits.push(*c);
+                        chars.next();
+                    }
+                    _ => break,
                 }
-                _ => break,
             }
-        }
-        if digits.is_empty() {
-            return Err(format!("`{token}`: expected a fret number {after}"));
-        }
-        if digits.len() == 2 && digits.starts_with('0') {
-            return Err(format!("`{token}`: fret `{digits}` has a leading zero"));
-        }
-        let n: u8 = digits.parse().expect("1-2 ASCII digits");
-        if n > 24 {
-            return Err(format!("`{token}`: fret {n} is outside 0-24"));
-        }
-        Ok(n)
-    };
+            if digits.is_empty() {
+                return Err(format!("`{token}`: expected a fret number {after}"));
+            }
+            if digits.len() == 2 && digits.starts_with('0') {
+                return Err(format!("`{token}`: fret `{digits}` has a leading zero"));
+            }
+            let n: u8 = digits.parse().expect("1-2 ASCII digits");
+            if n > 24 {
+                return Err(format!("`{token}`: fret {n} is outside 0-24"));
+            }
+            Ok(n)
+        };
 
     steps.push(TabStep::Fret(fret(&mut chars, "at the start of the note")?));
     while let Some(c) = chars.next() {
@@ -430,9 +431,7 @@ fn parse_tab_note(token: &str) -> Result<Vec<TabStep>, String> {
             }
             'r' => {
                 if !bent {
-                    return Err(format!(
-                        "`{token}`: release `r` with no bend `b` before it"
-                    ));
+                    return Err(format!("`{token}`: release `r` with no bend `b` before it"));
                 }
                 TabStep::Release(fret(&mut chars, "after `r`")?)
             }
@@ -482,7 +481,12 @@ struct Parser {
 impl Parser {
     fn new(duration_sec: f64) -> Self {
         Parser {
-            duration_sec,
+            // NaN or negative (no stems yet): treat as an empty project.
+            duration_sec: if duration_sec.is_finite() {
+                duration_sec.max(0.0)
+            } else {
+                0.0
+            },
             score: Score {
                 title: None,
                 artist: None,
@@ -510,21 +514,8 @@ impl Parser {
         let text = raw.trim_start_matches('\u{feff}').trim();
 
         if self.open_tab.is_some() {
-            return match split_directive(text).map_err(err)? {
-                Some((name, _, _)) if name == "end_of_tab" || name == "eot" => self.close_tab(),
-                Some((name, _, _)) => Err(err(format!(
-                    "directive {{{name}}} inside a tab block; close it with {{end_of_tab}} first"
-                ))),
-                None => {
-                    if !text.is_empty() {
-                        let tab = self.open_tab.as_mut().expect("checked above");
-                        tab.staff.push((line, text.to_string()));
-                    }
-                    Ok(())
-                }
-            };
+            return self.tab_line(text, line);
         }
-
         if text.is_empty() || text.starts_with('#') {
             return Ok(());
         }
@@ -532,30 +523,42 @@ impl Parser {
         let Some((name, value, rest)) = split_directive(text).map_err(err)? else {
             return self.content(text, line);
         };
-        match name.as_str() {
-            "t" => {
-                let sec = parse_time_anchor(&value)
-                    .map_err(|m| err(format!("invalid time anchor {{t: {value}}}: {m}")))?;
-                if let Some(last) = self.last_anchor {
-                    if sec < last {
-                        return Err(err(format!(
-                            "time anchor {{t: {value}}} is earlier than the previous one"
-                        )));
-                    }
-                }
-                if sec > self.duration_sec {
-                    return Err(err(format!(
-                        "time anchor {{t: {value}}} is past the project's end ({:.2}s)",
-                        self.duration_sec
-                    )));
-                }
-                self.last_anchor = Some(sec);
-                self.pending_anchor = Some(sec);
-                self.score.grid_origin_sec.get_or_insert(sec);
-                if !rest.is_empty() {
-                    return self.line(&rest, line);
-                }
+        if name == "t" {
+            self.anchor(&value, line)?;
+            // `{t: ...}[G]lyrics`: the rest is this anchor's line. One level
+            // only -- a second directive there is an error, not recursion.
+            if rest.is_empty() {
+                return Ok(());
             }
+            return match split_directive(&rest).map_err(err)? {
+                None => self.content(&rest, line),
+                Some((next, _, _)) if next == "start_of_tab" || next == "sot" => {
+                    self.directive(&next, String::new(), String::new(), line)
+                }
+                Some((next, _, _)) => Err(err(format!(
+                    "{{{next}}} after a {{t:}} on the same line; put it on its own line"
+                ))),
+            };
+        }
+        self.directive(&name, value, rest, line)
+    }
+
+    /// Every directive but `{t:}`. Text after its `}` is an error rather
+    /// than silently dropped.
+    fn directive(
+        &mut self,
+        name: &str,
+        value: String,
+        rest: String,
+        line: u32,
+    ) -> Result<(), ScoreParseError> {
+        let err = |message: String| ScoreParseError { line, message };
+        if !rest.is_empty() {
+            return Err(err(format!(
+                "text after {{{name}}} on the same line; put `{rest}` on its own line"
+            )));
+        }
+        match name {
             "title" => self.score.title = Some(value),
             "artist" => self.score.artist = Some(value),
             "key" => self.score.key = Some(value),
@@ -586,6 +589,56 @@ impl Parser {
             _ => {}
         }
         Ok(())
+    }
+
+    /// `{t:}`: must parse, must not go backwards, and must be claimed by a
+    /// line before the next one. An anchor past the project's end is fine
+    /// (stems can be re-imported shorter, durations round): `finish` never
+    /// lets an end come before its start.
+    fn anchor(&mut self, value: &str, line: u32) -> Result<(), ScoreParseError> {
+        let err = |message: String| ScoreParseError { line, message };
+        let sec = parse_time_anchor(value)
+            .map_err(|m| err(format!("invalid time anchor {{t: {value}}}: {m}")))?;
+        if self.pending_anchor.is_some() {
+            return Err(err(format!(
+                "time anchor {{t: {value}}} follows another {{t:}} that no line used"
+            )));
+        }
+        if let Some(last) = self.last_anchor {
+            if sec < last {
+                return Err(err(format!(
+                    "time anchor {{t: {value}}} is earlier than the previous one"
+                )));
+            }
+        }
+        self.last_anchor = Some(sec);
+        self.pending_anchor = Some(sec);
+        self.score.grid_origin_sec.get_or_insert(sec);
+        Ok(())
+    }
+
+    /// A line inside `{start_of_tab}` ... `{end_of_tab}`: a staff line, a
+    /// blank, a `#` comment or a `{c:}`/`{comment:}` (both ignored).
+    fn tab_line(&mut self, text: &str, line: u32) -> Result<(), ScoreParseError> {
+        let err = |message: String| ScoreParseError { line, message };
+        if text.is_empty() || text.starts_with('#') {
+            return Ok(());
+        }
+        match split_directive(text).map_err(err)? {
+            Some((name, _, _)) if name == "end_of_tab" || name == "eot" => self.close_tab(),
+            Some((name, _, _)) if name == "c" || name == "comment" => Ok(()),
+            Some((name, _, _)) => Err(err(format!(
+                "directive {{{name}}} inside a tab block; close it with {{end_of_tab}} first"
+            ))),
+            None => {
+                let tab = self
+                    .open_tab
+                    .as_mut()
+                    .expect("only called inside a tab block");
+                tab.staff.push((line, text.to_string()));
+                Ok(())
+            }
+        }
     }
 
     /// A chord/lyrics line: claims the pending anchor, if any.
@@ -621,7 +674,10 @@ impl Parser {
     }
 
     fn close_tab(&mut self) -> Result<(), ScoreParseError> {
-        let tab = self.open_tab.take().expect("only called inside a tab block");
+        let tab = self
+            .open_tab
+            .take()
+            .expect("only called inside a tab block");
         if tab.staff.len() != 6 {
             return Err(ScoreParseError {
                 line: tab.start_line,
@@ -702,10 +758,11 @@ impl Parser {
         }
 
         for i in 0..self.events.len() {
+            let start = self.events[i].0;
             let end = self
                 .events
                 .get(i + 1)
-                .map_or(self.duration_sec, |(start, _)| *start);
+                .map_or(self.duration_sec.max(start), |(next, _)| *next);
             match self.events[i].1 {
                 Event::Chord(c) => self.score.chords[c].end_sec = end,
                 Event::Tab(t) => self.score.tabs[t].end_sec = end,
@@ -714,14 +771,14 @@ impl Parser {
 
         for (tab, pending) in self.score.tabs.iter_mut().zip(self.tab_notes) {
             let span = tab.end_sec - tab.start_sec;
+            // A block with no notes may have zero columns: never divided.
             tab.notes = pending
                 .notes
                 .into_iter()
                 .map(|(string, column, steps)| TabNote {
                     string,
                     column,
-                    start_sec: tab.start_sec
-                        + column as f64 / pending.total_columns as f64 * span,
+                    start_sec: tab.start_sec + column as f64 / pending.total_columns as f64 * span,
                     steps,
                 })
                 .collect();
@@ -831,8 +888,7 @@ E|----------------------------------------------------------------|
 
     #[test]
     fn split_directive_reads_name_value_and_rest() {
-        let s =
-            |n: &str, v: &str, r: &str| Ok(Some((n.to_string(), v.to_string(), r.to_string())));
+        let s = |n: &str, v: &str, r: &str| Ok(Some((n.to_string(), v.to_string(), r.to_string())));
         assert_eq!(
             split_directive("{title: Study in G}"),
             s("title", "Study in G", "")
@@ -1138,10 +1194,7 @@ E|----------------------------------------------------------------|
         let score = parse(&text, 10.0).unwrap();
 
         assert_eq!(score.chords[0].end_sec, 4.0);
-        assert_eq!(
-            (score.tabs[0].start_sec, score.tabs[0].end_sec),
-            (4.0, 8.0)
-        );
+        assert_eq!((score.tabs[0].start_sec, score.tabs[0].end_sec), (4.0, 8.0));
         assert!(close(score.tabs[0].notes[0].start_sec, 5.0)); // column 1 of 4
         assert_eq!(score.chords[1].end_sec, 10.0);
     }
@@ -1221,7 +1274,54 @@ E|----------------------------------------------------------------|
         // An anchor is consumed by the line it anchors.
         assert_eq!(error_line("{t: 0:00.00}\n[G]a\n[C]b\n"), 3);
         assert_eq!(error_line("{t: 0:05.00}\n[G]a\n{t: 0:04.00}\n[C]b\n"), 3);
-        assert_eq!(error_line("{t: 1:01.00}\n[G]a\n"), 1); // past 60 s
+        // A second anchor before any line used the first one.
+        assert_eq!(error_line("{t: 0:01.00}\n{t: 0:02.00}\n[G]a\n"), 2);
+    }
+
+    #[test]
+    fn an_anchor_past_the_project_end_is_kept_and_never_ends_before_it_starts() {
+        // Added after review: a stem re-imported shorter, or a rounded
+        // durationSec, must not break the whole score.
+        let score = parse("{t: 0:30.00}\n[G]a\n{t: 1:01.00}\n[C]b\n", 60.0).unwrap();
+        assert_eq!(score.chords[0].end_sec, 61.0);
+        assert_eq!(
+            (score.chords[1].start_sec, score.chords[1].end_sec),
+            (61.0, 61.0)
+        );
+
+        // No stems yet (or a bad duration): nothing becomes NaN or negative.
+        for duration in [0.0, -1.0, f64::NAN] {
+            let score = parse("{t: 0:02.00}\n[G]a\n", duration).unwrap();
+            assert_eq!(score.chords[0].end_sec, 2.0, "duration {duration}");
+        }
+    }
+
+    #[test]
+    fn text_after_a_directive_is_an_error_not_silently_dropped() {
+        // Added after review.
+        assert_eq!(error_line("{title: x}[G]hello\n"), 1);
+        assert_eq!(error_line("{t: 0:00.00}\n{c: verse}[G]hello\n"), 2);
+        assert_eq!(error_line("{t: 0:00.00}{title: x}\n"), 1);
+        // A tab block may open on its anchor's line.
+        let text = format!(
+            "{{t: 0:00.00}}{{start_of_tab}}\n{}\n{{end_of_tab}}\n",
+            staff(["e|-1-|", "B|---|", "G|---|", "D|---|", "A|---|", "E|---|"])
+        );
+        assert_eq!(parse(&text, 4.0).unwrap().tabs[0].notes.len(), 1);
+    }
+
+    #[test]
+    fn a_long_chain_of_anchors_on_one_line_is_an_error_not_a_stack_overflow() {
+        // Added after review: this used to recurse once per directive.
+        let line = "{t: 0:00.00}".repeat(200_000);
+        assert_eq!(error_line(&line), 1);
+    }
+
+    #[test]
+    fn comments_inside_a_tab_block_are_not_staff_lines() {
+        // Added after review.
+        let text = "{t: 0:00.00}\n{start_of_tab}\n# riff\n{c: slow}\ne|-1-|\nB|---|\nG|---|\nD|---|\nA|---|\nE|---|\n{end_of_tab}\n";
+        assert_eq!(parse(text, 4.0).unwrap().tabs[0].lines.len(), 6);
     }
 
     #[test]
