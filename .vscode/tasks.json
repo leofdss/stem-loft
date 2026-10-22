@@ -1,0 +1,23 @@
+{
+  // Used by launch.json. Same dev server `cargo tauri dev` starts
+  // (src-tauri/tauri.conf.json's beforeDevCommand), so the debugged binary
+  // finds the UI at its devUrl.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ui: serve",
+      "type": "shell",
+      "command": "npm --prefix ui start -- --port 4200",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "typescript",
+        "pattern": "$tsc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Changes detected|Building",
+          "endsPattern": "bundle generation (complete|failed)|Watch mode enabled"
+        }
+      }
+    }
+  ]
+}

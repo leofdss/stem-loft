@@ -1,0 +1,47 @@
+{
+  // Debugging setup: see "Debugging in VS Code" in README.md.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Rust breakpoints (CodeLLDB). Builds the dev binary -- no
+      // `custom-protocol` feature, so it loads the UI from devUrl like
+      // `cargo tauri dev` -- after starting the Angular dev server.
+      "name": "Tauri: debug Rust core",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--manifest-path=src-tauri/Cargo.toml", "--bin=stemloft"],
+        "filter": { "name": "stemloft", "kind": "bin" }
+      },
+      "cwd": "${workspaceFolder}/src-tauri",
+      "sourceLanguages": ["rust"],
+      "preLaunchTask": "ui: serve"
+    },
+    {
+      // Rust breakpoints inside `cargo test` (the lib's #[cfg(test)] mods).
+      "name": "Rust: debug unit tests",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["test", "--no-run", "--manifest-path=src-tauri/Cargo.toml", "--lib"],
+        "filter": { "name": "stemloft_lib", "kind": "lib" }
+      },
+      "cwd": "${workspaceFolder}/src-tauri",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      // Angular breakpoints in the .spec.ts suite (Vitest + jsdom). `--debug`
+      // makes the Vitest worker wait for a debugger; autoAttachChildProcesses
+      // attaches to it. Coverage off so instrumentation doesn't shift lines.
+      "name": "Angular: debug unit tests",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "test", "--", "--watch=false", "--debug", "--coverage=false"],
+      "autoAttachChildProcesses": true,
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    }
+  ]
+}

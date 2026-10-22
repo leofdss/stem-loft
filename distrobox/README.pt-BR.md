@@ -37,8 +37,8 @@ disso.
 O `Containerfile` desta pasta define a imagem de desenvolvimento do
 StemLoft: Arch Linux (`quay.io/toolbx/arch-toolbox`, mantida pelo projeto
 Toolbx — irmão do Distrobox, mesma família de ferramentas) com Python,
-Node.js + fnm, Rust, git, Claude Code, yay, e fish/starship para um shell
-interativo. O VS Code é instalado na inicialização do container, não
+Node.js + fnm, Rust, a CLI do Tauri, git, Claude Code, yay, e
+fish/starship para um shell interativo. O VS Code é instalado na inicialização do container, não
 embutido na imagem (veja abaixo).
 
 Runtime alvo: **Podman**. Publicação: **GitHub Container Registry
