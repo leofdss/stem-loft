@@ -53,9 +53,16 @@ pub trait StemImporterCommands: Send + Sync {
     ) -> Result<Vec<StemEntry>, ImportError>;
 }
 
-/// The `Commands` Session forwards to `Loop & Marker Manager`.
+/// The `Commands` Session forwards to `Loop & Marker Manager`, plus putting
+/// a project's saved loop back when it's opened.
 pub trait LoopManagerCommands: Send + Sync {
-    fn set_markers(&self, start_sec: f64, end_sec: f64) -> Result<(), String>;
+    fn set_markers(
+        &self,
+        start_sec: f64,
+        end_sec: f64,
+        project_duration_sec: f64,
+    ) -> Result<(), String>;
+    fn restore(&self, markers: Option<LoopRange>, project_duration_sec: f64);
 }
 
 /// The `Commands` Session forwards to `Audio Engine` (transport + mixer).
@@ -83,8 +90,17 @@ impl StemImporterCommands for StemImporter {
 }
 
 impl LoopManagerCommands for LoopManager {
-    fn set_markers(&self, start_sec: f64, end_sec: f64) -> Result<(), String> {
-        LoopManager::set_markers(self, start_sec, end_sec)
+    fn set_markers(
+        &self,
+        start_sec: f64,
+        end_sec: f64,
+        project_duration_sec: f64,
+    ) -> Result<(), String> {
+        LoopManager::set_markers(self, start_sec, end_sec, project_duration_sec)
+    }
+
+    fn restore(&self, markers: Option<LoopRange>, project_duration_sec: f64) {
+        LoopManager::restore(self, markers, project_duration_sec)
     }
 }
 
@@ -246,6 +262,8 @@ impl Session {
         }
         self.checkpoint(Instant::now(), true)
             .map_err(|e| e.to_string())?;
+        // The loop goes first: no moment where it outlives its project.
+        self.loop_manager.restore(None, 0.0);
         *self.open() = None;
         Ok(())
     }
@@ -273,6 +291,7 @@ impl Session {
         self.persistence
             .save_project(&path, &project)
             .map_err(|e| e.to_string())?;
+        self.loop_manager.restore(None, 0.0);
         *self.open() = Some(OpenProject {
             path,
             project: project.clone(),
@@ -295,6 +314,8 @@ impl Session {
             .load_project(path)
             .map_err(|e| e.to_string())?;
         self.close_current()?;
+        self.loop_manager
+            .restore(project.loop_range, project.duration_sec());
         *self.open() = Some(OpenProject {
             path: path.to_path_buf(),
             project: project.clone(),
@@ -338,11 +359,19 @@ impl Session {
         Ok(new_stems)
     }
 
-    /// Forwards to `Loop & Marker Manager`; on success sets the project's
-    /// `loop` to `{ start_sec, end_sec }` and marks it dirty.
+    /// Forwards to `Loop & Marker Manager` with the project's duration (its
+    /// longest stem) to validate against; on success sets the project's
+    /// `loop` to `{ start_sec, end_sec }` and marks it dirty. Opening a
+    /// project restores its saved loop there; creating or closing one
+    /// clears it.
     pub fn set_markers(&self, start_sec: f64, end_sec: f64) -> Result<(), String> {
-        self.require_open()?;
-        self.loop_manager.set_markers(start_sec, end_sec)?;
+        let duration = {
+            let open = self.open();
+            let open = open.as_ref().ok_or_else(|| NO_PROJECT_OPEN.to_string())?;
+            open.project.duration_sec()
+        };
+        self.loop_manager
+            .set_markers(start_sec, end_sec, duration)?;
         self.record_change(|project| {
             project.loop_range = Some(LoopRange { start_sec, end_sec });
         })
@@ -419,6 +448,9 @@ mod tests {
     /// appended to `calls` as a readable string, and returns `result`.
     struct FakeModule {
         calls: Mutex<Vec<String>>,
+        /// `LoopManagerCommands::restore` calls, kept apart from `calls` so
+        /// a dispatch assertion doesn't depend on project lifecycle.
+        restored: Mutex<Vec<Option<LoopRange>>>,
         result: Result<(), String>,
     }
 
@@ -426,6 +458,7 @@ mod tests {
         fn returning(result: Result<(), String>) -> Arc<Self> {
             Arc::new(Self {
                 calls: Mutex::new(Vec::new()),
+                restored: Mutex::new(Vec::new()),
                 result,
             })
         }
@@ -441,8 +474,19 @@ mod tests {
     }
 
     impl LoopManagerCommands for FakeModule {
-        fn set_markers(&self, start_sec: f64, end_sec: f64) -> Result<(), String> {
-            self.record(format!("set_markers({start_sec}, {end_sec})"))
+        fn set_markers(
+            &self,
+            start_sec: f64,
+            end_sec: f64,
+            project_duration_sec: f64,
+        ) -> Result<(), String> {
+            self.record(format!(
+                "set_markers({start_sec}, {end_sec}, {project_duration_sec})"
+            ))
+        }
+
+        fn restore(&self, markers: Option<LoopRange>, _project_duration_sec: f64) {
+            self.restored.lock().unwrap().push(markers);
         }
     }
 
@@ -768,7 +812,7 @@ mod tests {
 
         assert_eq!(f.session.set_markers(1.5, 8.25), Ok(()));
 
-        assert_eq!(f.loop_manager.calls(), vec!["set_markers(1.5, 8.25)"]);
+        assert_eq!(f.loop_manager.calls(), vec!["set_markers(1.5, 8.25, 0)"]);
         assert!(f.audio_engine.calls().is_empty());
         f.session.checkpoint(Instant::now(), true).unwrap();
         assert_eq!(
@@ -778,6 +822,56 @@ mod tests {
                 end_sec: 8.25
             })
         );
+    }
+
+    #[test]
+    fn set_markers_validates_against_the_longest_stem() {
+        let f = with_project(Ok(()));
+        f.session
+            .import_stems(vec![PathBuf::from("/a/bass.wav")])
+            .unwrap();
+
+        f.session.set_markers(0.5, 2.0).unwrap();
+
+        // The fake importer makes every stem 2.5 s long.
+        assert_eq!(f.loop_manager.calls(), vec!["set_markers(0.5, 2, 2.5)"]);
+    }
+
+    #[test]
+    fn opening_a_project_restores_its_loop_and_closing_clears_it() {
+        let f = with_project(Ok(()));
+        f.session.set_markers(1.0, 2.0).unwrap();
+        f.session.close_project().unwrap();
+        f.session
+            .open_project(&f.dir.join("song").join(PROJECT_FILE))
+            .unwrap();
+        f.session.close_project().unwrap();
+
+        assert_eq!(
+            *f.loop_manager.restored.lock().unwrap(),
+            vec![
+                None, // created
+                None, // closed
+                Some(LoopRange {
+                    start_sec: 1.0,
+                    end_sec: 2.0
+                }), // reopened
+                None, // closed
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failed_close_keeps_the_project_and_its_loop() {
+        // Added after review.
+        let f = with_project(Ok(()));
+        f.session.set_markers(1.0, 2.0).unwrap();
+        fs::remove_dir_all(f.dir.join("song")).unwrap(); // the save will fail
+
+        assert!(f.session.close_project().is_err());
+
+        assert!(f.session.is_project_open());
+        assert_eq!(*f.loop_manager.restored.lock().unwrap(), vec![None]); // created only
     }
 
     #[test]

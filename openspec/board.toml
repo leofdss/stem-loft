@@ -20,7 +20,7 @@ suitable_for = "agent"
 playbooks = ["rust-domain-module"]
 
 [task-004-loop-marker-manager]
-status = "backlog"
+status = "review"
 branch = "feat/loop-marker-manager"
 depends_on = ["TASK-003"]
 suitable_for = "agent"
