@@ -408,3 +408,32 @@ class RemoteWorktreeTests(unittest.TestCase):
                 self.assertEqual(check_remote_image.read_remote_host(), "me@box")
             finally:
                 check_remote_image.REPO_ROOT, check_remote_image.HOST_LOCAL = saved
+
+
+class CheckChangedRemoteTests(unittest.TestCase):
+    """check_changed.py's post-edit cargo check goes to the remote build
+    host only when one is configured and answers; otherwise it runs
+    locally, silently."""
+
+    def test_local_checks_env_forces_local(self):
+        import os
+        import check_changed
+        os.environ["STEMLOFT_LOCAL_CHECKS"] = "1"
+        try:
+            self.assertIsNone(check_changed.remote_runner(Path(__file__).resolve().parents[2]))
+        finally:
+            del os.environ["STEMLOFT_LOCAL_CHECKS"]
+
+    def test_no_host_configured_means_local(self):
+        import shutil
+        import check_changed
+        with tempfile.TemporaryDirectory() as tmp:
+            remote = Path(tmp) / "distrobox" / "remote"
+            remote.mkdir(parents=True)
+            shutil.copy(Path(__file__).resolve().parents[2] / "distrobox" / "remote" / "lib.sh", remote / "lib.sh")
+            self.assertIsNone(check_changed.remote_runner(Path(tmp)))
+
+    def test_no_remote_scripts_means_local(self):
+        import check_changed
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(check_changed.remote_runner(Path(tmp)))
