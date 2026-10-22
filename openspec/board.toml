@@ -13,7 +13,7 @@
 #   python3 scripts/openspec_to_kanban.py
 
 [task-003-stem-importer]
-status = "backlog"
+status = "review"
 branch = "feat/stem-importer"
 depends_on = ["TASK-001", "TASK-002"]
 suitable_for = "agent"

@@ -68,7 +68,11 @@ impl fmt::Display for ImportError {
                 write!(f, "{}: {message}", file.display())
             }
             ImportError::Unsupported { file, message } => {
-                write!(f, "{} isn't a supported WAV file: {message}", file.display())
+                write!(
+                    f,
+                    "{} isn't a supported WAV file: {message}",
+                    file.display()
+                )
             }
             ImportError::TooManyChannels { file, channels } => write!(
                 f,
@@ -119,7 +123,8 @@ impl StemImporter {
     ///    `ProjectPersistence::atomic_write_with`: a mono file upmixed by
     ///    [`write_upmixed`], a stereo one copied byte for byte.
     /// 3. If a write fails, the files this call already wrote are removed
-    ///    again, and the error is returned.
+    ///    again (best effort: a file that can't be removed stays, and a
+    ///    later import picks another id), and the error is returned.
     #[allow(dead_code)] // called from Session once TASK-009 wires the Command
     pub fn import(
         &self,
@@ -135,6 +140,14 @@ impl StemImporter {
         let mut sources: Vec<(PathBuf, File, WavInfo)> = Vec::with_capacity(files.len());
         for path in files {
             let (file, info) = open_header(path)?;
+            // A mono stem doubles in size: it has to fit RIFF's 32-bit sizes
+            // once upmixed. Checked here so nothing is written for it.
+            if info.channels == 1 && info.data_len * 2 + 36 > u64::from(u32::MAX) {
+                return Err(ImportError::Unsupported {
+                    file: path.clone(),
+                    message: "too long to upmix to stereo within WAV's 4 GiB limit".into(),
+                });
+            }
             if info.channels > 2 {
                 return Err(ImportError::TooManyChannels {
                     file: path.clone(),
@@ -270,15 +283,13 @@ fn read_wav_header(file: &mut File) -> Result<WavInfo, String> {
                 let format = match tag {
                     1 | 3 => tag,
                     0xFFFE => {
-                        if body.len() < 26 {
+                        if body.len() < 40 {
                             return Err("extensible fmt chunk has no subformat".into());
                         }
                         match u16::from_le_bytes([body[24], body[25]]) {
                             sub @ (1 | 3) => sub,
                             sub => {
-                                return Err(format!(
-                                    "unsupported extensible subformat {sub:#06x}"
-                                ))
+                                return Err(format!("unsupported extensible subformat {sub:#06x}"))
                             }
                         }
                     }
@@ -344,7 +355,10 @@ fn write_upmixed(info: &WavInfo, src: &mut File, dst: &mut File) -> io::Result<(
     let frames = info.data_len / width as u64;
     let out_data_len = u32::try_from(frames * width as u64 * 2).map_err(|_| too_big())?;
     let out_align = u16::try_from(width * 2).map_err(|_| too_big())?;
-    let byte_rate = info.sample_rate.checked_mul(u32::from(out_align)).ok_or_else(too_big)?;
+    let byte_rate = info
+        .sample_rate
+        .checked_mul(u32::from(out_align))
+        .ok_or_else(too_big)?;
     let riff_size = out_data_len.checked_add(36).ok_or_else(too_big)?;
 
     let mut header = Vec::with_capacity(44);
@@ -494,7 +508,13 @@ mod tests {
     fn reads_plain_pcm_headers() {
         let mono = header("mono-44100-16.wav");
         assert_eq!(
-            (mono.format, mono.channels, mono.sample_rate, mono.bits_per_sample, mono.block_align),
+            (
+                mono.format,
+                mono.channels,
+                mono.sample_rate,
+                mono.bits_per_sample,
+                mono.block_align
+            ),
             (1, 1, 44100, 16, 2)
         );
         assert_eq!(mono.data_offset, 44);
@@ -511,13 +531,21 @@ mod tests {
     #[test]
     fn reads_float_and_extensible_headers_and_skips_unknown_chunks() {
         let float = header("mono-44100-float.wav");
-        assert_eq!((float.format, float.bits_per_sample, float.block_align), (3, 32, 4));
+        assert_eq!(
+            (float.format, float.bits_per_sample, float.block_align),
+            (3, 32, 4)
+        );
 
         // fmt (extensible, 40-byte body), then a LIST chunk with an odd
         // size and its pad byte, then data.
         let ext = header("mono-44100-24-extensible.wav");
         assert_eq!(
-            (ext.format, ext.channels, ext.bits_per_sample, ext.block_align),
+            (
+                ext.format,
+                ext.channels,
+                ext.bits_per_sample,
+                ext.block_align
+            ),
             (1, 1, 24, 3)
         );
         assert_eq!(ext.data_offset, 12 + 8 + 40 + 8 + 22 + 8);
@@ -579,7 +607,10 @@ mod tests {
     fn stem_ids_are_slugs_unique_in_the_project() {
         let none: Vec<String> = vec![];
         assert_eq!(stem_id(Path::new("/x/Bass.wav"), &none), "bass");
-        assert_eq!(stem_id(Path::new("/x/Lead Vocals (take 2).WAV"), &none), "lead-vocals-take-2");
+        assert_eq!(
+            stem_id(Path::new("/x/Lead Vocals (take 2).WAV"), &none),
+            "lead-vocals-take-2"
+        );
         assert_eq!(stem_id(Path::new("/x/__drums__.wav"), &none), "drums");
         assert_eq!(stem_id(Path::new("/x/ação.wav"), &none), "a-o");
         assert_eq!(stem_id(Path::new("/x/!!!.wav"), &none), "stem");
@@ -592,7 +623,11 @@ mod tests {
 
     #[test]
     fn upmix_writes_a_stereo_wav_with_the_same_signal_on_both_channels() {
-        for name in ["mono-44100-16.wav", "mono-44100-float.wav", "mono-44100-24-extensible.wav"] {
+        for name in [
+            "mono-44100-16.wav",
+            "mono-44100-float.wav",
+            "mono-44100-24-extensible.wav",
+        ] {
             let dir = temp_dir("upmix");
             let out = dir.join("out.wav");
             let (mono, mono_data) = data_of(&fixture(name));
@@ -622,7 +657,11 @@ mod tests {
             // Byte rate and RIFF size are consistent too.
             let bytes = fs::read(&out).unwrap();
             let byte_rate = u32::from_le_bytes(bytes[28..32].try_into().unwrap());
-            assert_eq!(byte_rate, stereo.sample_rate * stereo.block_align as u32, "{name}");
+            assert_eq!(
+                byte_rate,
+                stereo.sample_rate * stereo.block_align as u32,
+                "{name}"
+            );
             let riff_size = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
             assert_eq!(riff_size as usize, bytes.len() - 8, "{name}");
             fs::remove_dir_all(&dir).ok();
@@ -660,7 +699,10 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(files_in(&dir), vec!["mono-44100-16.wav", "stereo-44100-16.wav"]);
+        assert_eq!(
+            files_in(&dir),
+            vec!["mono-44100-16.wav", "stereo-44100-16.wav"]
+        );
         assert_eq!(data_of(&dir.join("mono-44100-16.wav")).0.channels, 2);
         assert_eq!(
             fs::read(dir.join("stereo-44100-16.wav")).unwrap(),
@@ -686,7 +728,10 @@ mod tests {
             }
         );
         let message = err.to_string();
-        assert!(message.contains("48000") && message.contains("44100"), "{message}");
+        assert!(
+            message.contains("48000") && message.contains("44100"),
+            "{message}"
+        );
         assert_eq!(files_in(&dir), vec!["guitar.wav"], "nothing may be written");
         fs::remove_dir_all(&dir).ok();
     }
@@ -705,11 +750,19 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             err,
-            ImportError::SampleRateMismatch { found: 48000, expected: 44100, .. }
+            ImportError::SampleRateMismatch {
+                found: 48000,
+                expected: 44100,
+                ..
+            }
         ));
 
         let err = importer()
-            .import(&dir, &[], &[fixture("mono-44100-16.wav"), fixture("quad-44100-16.wav")])
+            .import(
+                &dir,
+                &[],
+                &[fixture("mono-44100-16.wav"), fixture("quad-44100-16.wav")],
+            )
             .unwrap_err();
         assert_eq!(
             err,
@@ -720,7 +773,11 @@ mod tests {
         );
 
         let err = importer()
-            .import(&dir, &[], &[fixture("mono-44100-16.wav"), dir.join("missing.wav")])
+            .import(
+                &dir,
+                &[],
+                &[fixture("mono-44100-16.wav"), dir.join("missing.wav")],
+            )
             .unwrap_err();
         assert!(matches!(err, ImportError::Io { .. }), "{err:?}");
 
@@ -749,7 +806,10 @@ mod tests {
 
         let ids: Vec<&str> = entries.iter().map(|e| e.id.as_str()).collect();
         assert_eq!(ids, vec!["guitar-2", "guitar-3"]);
-        assert_eq!(files_in(&dir), vec!["guitar-2.wav", "guitar-3.wav", "guitar.wav"]);
+        assert_eq!(
+            files_in(&dir),
+            vec!["guitar-2.wav", "guitar-3.wav", "guitar.wav"]
+        );
         fs::remove_dir_all(&dir).ok();
         fs::remove_dir_all(&source).ok();
     }
@@ -766,7 +826,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(entries[0].id, "bass-2");
-        assert_eq!(fs::read(dir.join("bass.wav")).unwrap(), b"not part of the project");
+        assert_eq!(
+            fs::read(dir.join("bass.wav")).unwrap(),
+            b"not part of the project"
+        );
         fs::remove_dir_all(&dir).ok();
         fs::remove_dir_all(&source).ok();
     }
