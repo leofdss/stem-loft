@@ -16,11 +16,17 @@ file not in the ref).
 This is what makes "the implementer never edits its own judge" a checked
 rule instead of a request: an agent with edit access can be asked not to
 touch the tests, but only a diff proves it didn't.
+
+For a `.rs` file, a difference that `rustfmt` alone explains (someone ran
+`cargo fmt` over a contract that wasn't formatted) is not a change: both
+versions are formatted and compared again before reporting one. Anything
+rustfmt doesn't produce still fails.
 """
 from __future__ import annotations
 
 import argparse
 import difflib
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -44,6 +50,16 @@ def committed_text(path: Path, ref: str) -> str | None:
     return shown.stdout if shown.returncode == 0 else None
 
 
+def rustfmt(source: str) -> str | None:
+    """`source` as rustfmt formats it, or None (no rustfmt, or it doesn't
+    parse)."""
+    if shutil.which("rustfmt") is None:
+        return None
+    r = subprocess.run(["rustfmt", "--edition", "2021", "--emit", "stdout"], input=source,
+                       capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else None
+
+
 def compare(path: Path, marker: str, ref: str) -> tuple[int, str]:
     before_text = committed_text(path, ref)
     if before_text is None:
@@ -55,6 +71,12 @@ def compare(path: Path, marker: str, ref: str) -> tuple[int, str]:
         return 2, f"marker {marker!r} not found in {side} of {path}"
     if before == after:
         return 0, f"OK -- frozen part of {path} (from {marker!r}) matches {ref}"
+    if path.suffix == ".rs":
+        before_fmt = frozen_region(rustfmt(before_text) or "", marker)
+        after_fmt = frozen_region(rustfmt(path.read_text(encoding="utf-8")) or "", marker)
+        if before_fmt is not None and before_fmt == after_fmt:
+            return 0, (f"OK -- frozen part of {path} (from {marker!r}) matches {ref} "
+                       "after rustfmt (formatting only)")
     diff = "".join(difflib.unified_diff(
         before.splitlines(keepends=True), after.splitlines(keepends=True),
         fromfile=f"{ref}:{path} (frozen)", tofile=f"{path} (working tree)"))
