@@ -3,6 +3,32 @@ import { Injectable } from '@angular/core';
 // Ambient `window.__TAURI__` typing (see tauri-global.d.ts) -- picked up
 // automatically by the TypeScript program, nothing to import.
 
+/** One stem of a project -- `StemEntry` in src-tauri/src/core/persistence.rs. */
+export interface StemEntry {
+  readonly id: string;
+  readonly file: string;
+  readonly durationSec: number;
+  readonly waveformCache?: string;
+}
+
+/** A stem's mixer state -- `MixerSettings` in persistence.rs. */
+export interface MixerSettings {
+  readonly volume: number;
+  readonly mute: boolean;
+  readonly solo: boolean;
+}
+
+/** The project the core has open -- `Project` in persistence.rs. */
+export interface Project {
+  readonly schemaVersion: number;
+  readonly id: string;
+  readonly name: string;
+  readonly stems: readonly StemEntry[];
+  readonly score?: string;
+  readonly loop?: { readonly startSec: number; readonly endSec: number };
+  readonly mixer: Readonly<Record<string, MixerSettings>>;
+}
+
 /**
  * `Commands` -- Angular → Rust. A thin wrapper around
  * `window.__TAURI__.core.invoke`, one method per `Command` the Rust core
@@ -23,7 +49,22 @@ export class Ipc {
     return window.__TAURI__.core.invoke('is_project_open');
   }
 
-  importStems(filePaths: string[]): Promise<void> {
+  /** Creates `dir/project.json` and opens it; returns the new project. */
+  createProject(dir: string, name: string): Promise<Project> {
+    return window.__TAURI__.core.invoke('create_project', { dir, name });
+  }
+
+  /** Opens the `project.json` at `path`; returns the loaded project. */
+  openProject(path: string): Promise<Project> {
+    return window.__TAURI__.core.invoke('open_project', { path });
+  }
+
+  closeProject(): Promise<void> {
+    return window.__TAURI__.core.invoke('close_project');
+  }
+
+  /** Resolves with the stems the core added to the open project. */
+  importStems(filePaths: string[]): Promise<StemEntry[]> {
     return window.__TAURI__.core.invoke('import_stems', { filePaths });
   }
 

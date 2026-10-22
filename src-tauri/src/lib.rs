@@ -12,14 +12,39 @@
 mod core;
 mod ipc;
 
+use std::thread;
+use std::time::{Duration, Instant};
+
 use core::app_state::AppState;
+use tauri::Manager;
+
+/// How often the background ticker asks `Project Persistence` whether a
+/// dirty project is due for its debounced write.
+const CHECKPOINT_TICK: Duration = Duration::from_millis(100);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::new())
+        .setup(|app| {
+            // The debounced checkpoint: a background task that touches
+            // Session's state through its lock, never through the Commands
+            // queue (docs/architecture.md, concurrency model).
+            let handle = app.handle().clone();
+            thread::spawn(move || loop {
+                thread::sleep(CHECKPOINT_TICK);
+                let state = handle.state::<AppState>();
+                if let Err(e) = state.session.checkpoint(Instant::now(), false) {
+                    eprintln!("stemloft: saving the project failed, will retry: {e}");
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             ipc::commands::is_project_open,
+            ipc::commands::create_project,
+            ipc::commands::open_project,
+            ipc::commands::close_project,
             ipc::commands::import_stems,
             ipc::commands::set_markers,
             ipc::commands::play,
@@ -29,6 +54,15 @@ pub fn run() {
             ipc::commands::set_stem_mute,
             ipc::commands::set_stem_solo,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running the StemLoft application");
+        .build(tauri::generate_context!())
+        .expect("error while building the StemLoft application")
+        .run(|app, event| {
+            // Quitting is a definitive event, like closing the project.
+            if let tauri::RunEvent::Exit = event {
+                let state = app.state::<AppState>();
+                if let Err(e) = state.session.checkpoint(Instant::now(), true) {
+                    eprintln!("stemloft: saving the project on exit failed: {e}");
+                }
+            }
+        });
 }

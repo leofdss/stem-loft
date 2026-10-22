@@ -15,6 +15,7 @@
 use std::sync::Arc;
 
 use super::audio_engine::AudioEngine;
+use super::command_queue::CommandQueue;
 use super::loop_manager::LoopManager;
 use super::persistence::ProjectPersistence;
 use super::score_metadata::ScoreMetadataManager;
@@ -22,6 +23,9 @@ use super::session::Session;
 use super::stem_importer::StemImporter;
 
 pub struct AppState {
+    /// Every `Command` runs through this, one at a time, in arrival order
+    /// (docs/architecture.md#design-note-commands-queue-in-the-rust-core).
+    pub queue: CommandQueue,
     pub session: Session,
 }
 
@@ -45,7 +49,10 @@ impl AppState {
             score_metadata,
         );
 
-        Self { session }
+        Self {
+            queue: CommandQueue::new(),
+            session,
+        }
     }
 }
 
