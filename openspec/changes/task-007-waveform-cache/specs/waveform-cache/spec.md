@@ -24,3 +24,14 @@ Re-importing or replacing a stem MUST invalidate that stem's cached peaks.
 #### Scenario: Stem replaced
 - **WHEN** a stem is replaced with a new file
 - **THEN** its peaks are recomputed instead of read from the old cache
+
+### Requirement: Self-validating cache
+A cache file SHALL be used only when its format version and resolution match and it records the stem file's current size and modification time; any other cache, including a corrupt one, SHALL be recomputed rather than reported as an error.
+
+#### Scenario: Corrupt cache
+- **WHEN** a stem's cache file holds garbage
+- **THEN** its peaks are recomputed and the cache rewritten
+
+#### Scenario: Cache can't be written
+- **WHEN** the cache file can't be written
+- **THEN** the computed peaks are still returned
