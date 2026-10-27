@@ -1,0 +1,50 @@
+#!/bin/sh
+# Install VS Code from the AUR on the first container start, and update it
+# on every start after that. Called by distrobox.ini's init_hooks, as root,
+# in the background (a slow download never delays `distrobox enter`).
+# Output goes to /var/log/stemloft-vscode.log; a failure (offline, AUR
+# down) only means VS Code waits for the next start.
+set -u
+
+PACKAGE=visual-studio-code-bin
+YAY_FLAGS='--noconfirm --answerclean None --answerdiff None --answeredit None --removemake'
+
+# Second half: runs as the container's user (makepkg refuses root);
+# Distrobox gives that user passwordless sudo for the pacman steps.
+if [ "${1:-}" = "--as-user" ]; then
+  # The image ships its runtime dependencies and empty pacman databases.
+  # If the package ever gains a dependency the image lacks, install it
+  # from the official repos with a full -Syu (never a partial upgrade) --
+  # otherwise yay, seeing no repos, would go looking for it in the AUR.
+  # `yay -Si` wraps a long "Depends On" field onto indented lines.
+  deps=$(yay -Si "$PACKAGE" | awk '
+    /^Depends On/ { on = 1; sub(/^[^:]*: */, ""); print; next }
+    on && /^[[:space:]]/ { print; next }
+    { on = 0 }')
+  missing=$(pacman -T $deps)
+  if [ -n "$missing" ]; then
+    echo "dependencies missing from the image: $missing"
+    sudo pacman -Syu --needed --noconfirm $missing || exit 1
+  fi
+  # --needed installs only if missing; -Sua then upgrades AUR packages
+  # (VS Code is the only one) when a newer version is published.
+  yay -S --needed $YAY_FLAGS "$PACKAGE" && yay -Sua $YAY_FLAGS
+  exit
+fi
+
+exec >>/var/log/stemloft-vscode.log 2>&1
+echo "== $(date -Is) stemloft-vscode"
+
+# The container's user: Distrobox creates exactly one regular account,
+# matching the host's, before init hooks run.
+user=$(awk -F: '$3 >= 1000 && $3 < 60000 { print $1; exit }' /etc/passwd)
+if [ -z "$user" ]; then
+  echo "no regular user yet -- skipping"
+  exit 0
+fi
+
+if su -s /bin/sh "$user" -c "$0 --as-user"; then
+  echo "ok: $(pacman -Q "$PACKAGE")"
+else
+  echo "failed -- will retry on the next container start"
+fi
