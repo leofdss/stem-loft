@@ -36,8 +36,8 @@ and updated on every start after that.
 The `Containerfile` in this folder defines StemLoft's development image:
 Arch Linux (`quay.io/toolbx/arch-toolbox`, maintained by the Toolbx
 project — Distrobox's sibling, same family of tools) with Python,
-Node.js + fnm, Rust, git, Claude Code, yay, and fish/starship for an
-interactive shell. VS Code is installed at container start, not baked in
+Node.js + fnm, Rust, the Tauri CLI, git, Claude Code, yay, and
+fish/starship for an interactive shell. VS Code is installed at container start, not baked in
 (see below).
 
 Target runtime: **Podman**. Publishing: **GitHub Container Registry (ghcr.io)**,

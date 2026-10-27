@@ -88,6 +88,32 @@ brings). This starts the Angular dev server and opens the app's window —
 today, the empty-state screens the scaffold ships with, since none of the
 Rust core's domain logic is implemented yet.
 
+### Debugging in VS Code
+
+Open the repo root in the container's VS Code (`code .`, or the "Visual
+Studio Code (on stemloft)" launcher) and install the recommended
+extensions it offers (rust-analyzer, CodeLLDB, Angular Language Service).
+`.vscode/launch.json` has three configurations:
+
+- **Tauri: debug Rust core** — starts the Angular dev server, builds the
+  dev binary, and runs it under CodeLLDB: breakpoints in `src-tauri/` hit
+  while you use the real app window.
+- **Rust: debug unit tests** — the core's `#[cfg(test)]` tests under
+  CodeLLDB.
+- **Angular: debug unit tests** — the `.spec.ts` suite (Vitest + jsdom)
+  under VS Code's Node debugger: breakpoints in `ui/src/` hit as the tests
+  exercise that code.
+
+Breakpoints in Angular code *inside the running app window* can't come
+from VS Code on Linux: Tauri renders through WebKitGTK, which doesn't speak
+the Chrome DevTools protocol VS Code's JavaScript debugger needs (only
+Windows' WebView2 does). Use the WebView's own inspector instead —
+right-click in the window → **Inspect Element** (enabled in debug builds)
+→ **Sources**: the TypeScript files are there through the dev server's
+source maps, and breakpoints set there pause the app. Both debuggers work
+at once: run **Tauri: debug Rust core** and open the inspector in its
+window to follow a `Command` from Angular into Rust.
+
 ### Docs
 
 - [`docs/architecture.md`](docs/architecture.md) — full architecture: components, IPC contract, the `.cho` format, data flows.
