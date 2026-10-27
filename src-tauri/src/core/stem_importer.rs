@@ -244,7 +244,7 @@ fn read_exact_or(file: &mut File, buf: &mut [u8], what: &str) -> Result<(), Stri
 /// not RIFF/WAVE, a missing chunk, any other format, `block_align` not
 /// `channels * bits_per_sample / 8`, a zero sample rate or channel count,
 /// or a `data` chunk running past the end of the file.
-fn read_wav_header(file: &mut File) -> Result<WavInfo, String> {
+pub(crate) fn read_wav_header(file: &mut File) -> Result<WavInfo, String> {
     let file_len = file
         .metadata()
         .map_err(|e| format!("can't read the file size: {e}"))?

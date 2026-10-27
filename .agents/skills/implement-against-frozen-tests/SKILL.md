@@ -36,7 +36,8 @@ themselves (AGENTS.md, "Choosing who does the work").
 2. **Write the skeleton**: every type, attribute and signature final, bodies
    `todo!()`, a one-line comment per body stating its rule. Precision is the
    biggest lever measured — a bare spec doesn't compile; a skeleton does.
-3. **Commit the contract** (`test: contract for TASK-NNN <unit>`). This
+3. **Format, then commit the contract** (`cargo fmt` / `prettier`, then
+   `test: contract for TASK-NNN <unit>`). This
    commit is what `scripts/check_frozen.py` compares against.
 4. **Write the brief** (template below). One unit per brief; split big
    tasks into several briefs rather than one large one.
