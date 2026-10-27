@@ -53,9 +53,22 @@ pub trait StemImporterCommands: Send + Sync {
     ) -> Result<Vec<StemEntry>, ImportError>;
 }
 
-/// The `Commands` Session forwards to `Loop & Marker Manager`.
+/// The `Commands` Session forwards to `Loop & Marker Manager`, plus putting
+/// a project's saved loop back when it's opened.
 pub trait LoopManagerCommands: Send + Sync {
-    fn set_markers(&self, start_sec: f64, end_sec: f64) -> Result<(), String>;
+    fn set_markers(
+        &self,
+        start_sec: f64,
+        end_sec: f64,
+        project_duration_sec: f64,
+    ) -> Result<(), String>;
+    fn restore(&self, markers: Option<LoopRange>, project_duration_sec: f64);
+}
+
+/// What Session asks of `Score Metadata Manager`: publishing the open
+/// project's score (`score_loaded` or `score_parse_error`).
+pub trait ScoreMetadataCommands: Send + Sync {
+    fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64);
 }
 
 /// The `Commands` Session forwards to `Audio Engine` (transport + mixer).
@@ -83,8 +96,23 @@ impl StemImporterCommands for StemImporter {
 }
 
 impl LoopManagerCommands for LoopManager {
-    fn set_markers(&self, start_sec: f64, end_sec: f64) -> Result<(), String> {
-        LoopManager::set_markers(self, start_sec, end_sec)
+    fn set_markers(
+        &self,
+        start_sec: f64,
+        end_sec: f64,
+        project_duration_sec: f64,
+    ) -> Result<(), String> {
+        LoopManager::set_markers(self, start_sec, end_sec, project_duration_sec)
+    }
+
+    fn restore(&self, markers: Option<LoopRange>, project_duration_sec: f64) {
+        LoopManager::restore(self, markers, project_duration_sec)
+    }
+}
+
+impl ScoreMetadataCommands for ScoreMetadataManager {
+    fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64) {
+        ScoreMetadataManager::publish_score(self, project_dir, score_file, project_duration_sec)
     }
 }
 
@@ -133,10 +161,7 @@ pub struct Session {
     loop_manager: Arc<dyn LoopManagerCommands>,
     audio_engine: Arc<dyn AudioEngineCommands>,
     persistence: Arc<ProjectPersistence>,
-    // Not dispatched to by any Command yet (score loading lands with
-    // TASK-012) -- held concretely, with no trait, until one does.
-    #[allow(dead_code)]
-    score_metadata: Arc<ScoreMetadataManager>,
+    score_metadata: Arc<dyn ScoreMetadataCommands>,
     // Session's one `Mutex` -- see
     // docs/architecture.md#design-note-concurrency-model-for-shared-state.
     // Commands only change it one at a time (the queue), so the only other
@@ -158,7 +183,7 @@ impl Session {
         loop_manager: Arc<dyn LoopManagerCommands>,
         audio_engine: Arc<dyn AudioEngineCommands>,
         persistence: Arc<ProjectPersistence>,
-        score_metadata: Arc<ScoreMetadataManager>,
+        score_metadata: Arc<dyn ScoreMetadataCommands>,
     ) -> Self {
         Self {
             stem_importer,
@@ -246,6 +271,8 @@ impl Session {
         }
         self.checkpoint(Instant::now(), true)
             .map_err(|e| e.to_string())?;
+        // The loop goes first: no moment where it outlives its project.
+        self.loop_manager.restore(None, 0.0);
         *self.open() = None;
         Ok(())
     }
@@ -273,6 +300,7 @@ impl Session {
         self.persistence
             .save_project(&path, &project)
             .map_err(|e| e.to_string())?;
+        self.loop_manager.restore(None, 0.0);
         *self.open() = Some(OpenProject {
             path,
             project: project.clone(),
@@ -284,7 +312,10 @@ impl Session {
     /// project file at `path` with `ProjectPersistence::load_project` (its
     /// error's `Display` is the message), then opens it in place of the
     /// current one. When saving or loading fails, the current project stays
-    /// open. Returns the loaded project.
+    /// open. A project with a `score` then has it published by `Score
+    /// Metadata Manager` (`score_loaded` or `score_parse_error`), with the
+    /// `.cho` named relative to the project's folder. Returns the loaded
+    /// project.
     pub fn open_project(&self, path: &Path) -> Result<Project, String> {
         // Save the current project before reading: reopening the same file
         // must load what's in memory now, not an older version on disk.
@@ -295,10 +326,19 @@ impl Session {
             .load_project(path)
             .map_err(|e| e.to_string())?;
         self.close_current()?;
+        self.loop_manager
+            .restore(project.loop_range, project.duration_sec());
         *self.open() = Some(OpenProject {
             path: path.to_path_buf(),
             project: project.clone(),
         });
+        // Published after the project is open, outside the lock: a broken
+        // score is a `score_parse_error` event, never a failed open.
+        if let Some(score) = &project.score {
+            let dir = path.parent().unwrap_or_else(|| Path::new("."));
+            self.score_metadata
+                .publish_score(dir, score, project.duration_sec());
+        }
         Ok(project)
     }
 
@@ -338,11 +378,19 @@ impl Session {
         Ok(new_stems)
     }
 
-    /// Forwards to `Loop & Marker Manager`; on success sets the project's
-    /// `loop` to `{ start_sec, end_sec }` and marks it dirty.
+    /// Forwards to `Loop & Marker Manager` with the project's duration (its
+    /// longest stem) to validate against; on success sets the project's
+    /// `loop` to `{ start_sec, end_sec }` and marks it dirty. Opening a
+    /// project restores its saved loop there; creating or closing one
+    /// clears it.
     pub fn set_markers(&self, start_sec: f64, end_sec: f64) -> Result<(), String> {
-        self.require_open()?;
-        self.loop_manager.set_markers(start_sec, end_sec)?;
+        let duration = {
+            let open = self.open();
+            let open = open.as_ref().ok_or_else(|| NO_PROJECT_OPEN.to_string())?;
+            open.project.duration_sec()
+        };
+        self.loop_manager
+            .set_markers(start_sec, end_sec, duration)?;
         self.record_change(|project| {
             project.loop_range = Some(LoopRange { start_sec, end_sec });
         })
@@ -419,6 +467,9 @@ mod tests {
     /// appended to `calls` as a readable string, and returns `result`.
     struct FakeModule {
         calls: Mutex<Vec<String>>,
+        /// `LoopManagerCommands::restore` calls, kept apart from `calls` so
+        /// a dispatch assertion doesn't depend on project lifecycle.
+        restored: Mutex<Vec<Option<LoopRange>>>,
         result: Result<(), String>,
     }
 
@@ -426,6 +477,7 @@ mod tests {
         fn returning(result: Result<(), String>) -> Arc<Self> {
             Arc::new(Self {
                 calls: Mutex::new(Vec::new()),
+                restored: Mutex::new(Vec::new()),
                 result,
             })
         }
@@ -441,8 +493,19 @@ mod tests {
     }
 
     impl LoopManagerCommands for FakeModule {
-        fn set_markers(&self, start_sec: f64, end_sec: f64) -> Result<(), String> {
-            self.record(format!("set_markers({start_sec}, {end_sec})"))
+        fn set_markers(
+            &self,
+            start_sec: f64,
+            end_sec: f64,
+            project_duration_sec: f64,
+        ) -> Result<(), String> {
+            self.record(format!(
+                "set_markers({start_sec}, {end_sec}, {project_duration_sec})"
+            ))
+        }
+
+        fn restore(&self, markers: Option<LoopRange>, _project_duration_sec: f64) {
+            self.restored.lock().unwrap().push(markers);
         }
     }
 
@@ -515,6 +578,22 @@ mod tests {
         }
     }
 
+    /// Records each score it's asked to publish.
+    #[derive(Default)]
+    struct FakeScores {
+        published: Mutex<Vec<(PathBuf, String, f64)>>,
+    }
+
+    impl ScoreMetadataCommands for FakeScores {
+        fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64) {
+            self.published.lock().unwrap().push((
+                project_dir.to_path_buf(),
+                score_file.to_string(),
+                project_duration_sec,
+            ));
+        }
+    }
+
     /// A Session wired to separate fakes and a real `Project Persistence`
     /// with a one-hour debounce, so only a definitive checkpoint (or a
     /// `now` an hour later) writes.
@@ -523,6 +602,7 @@ mod tests {
         importer: Arc<FakeImporter>,
         loop_manager: Arc<FakeModule>,
         audio_engine: Arc<FakeModule>,
+        scores: Arc<FakeScores>,
         dir: PathBuf,
     }
 
@@ -535,6 +615,7 @@ mod tests {
         });
         let loop_manager = FakeModule::returning(result.clone());
         let audio_engine = FakeModule::returning(result);
+        let scores = Arc::new(FakeScores::default());
         let session = Session::new(
             importer.clone(),
             loop_manager.clone(),
@@ -544,7 +625,7 @@ mod tests {
                 vec![],
                 DEBOUNCE,
             )),
-            Arc::new(ScoreMetadataManager::new()),
+            scores.clone(),
         );
         let dir = std::env::temp_dir().join(format!(
             "stemloft-session-{}-{}",
@@ -559,6 +640,7 @@ mod tests {
             importer,
             loop_manager,
             audio_engine,
+            scores,
             dir,
         }
     }
@@ -768,7 +850,7 @@ mod tests {
 
         assert_eq!(f.session.set_markers(1.5, 8.25), Ok(()));
 
-        assert_eq!(f.loop_manager.calls(), vec!["set_markers(1.5, 8.25)"]);
+        assert_eq!(f.loop_manager.calls(), vec!["set_markers(1.5, 8.25, 0)"]);
         assert!(f.audio_engine.calls().is_empty());
         f.session.checkpoint(Instant::now(), true).unwrap();
         assert_eq!(
@@ -778,6 +860,87 @@ mod tests {
                 end_sec: 8.25
             })
         );
+    }
+
+    #[test]
+    fn set_markers_validates_against_the_longest_stem() {
+        let f = with_project(Ok(()));
+        f.session
+            .import_stems(vec![PathBuf::from("/a/bass.wav")])
+            .unwrap();
+
+        f.session.set_markers(0.5, 2.0).unwrap();
+
+        // The fake importer makes every stem 2.5 s long.
+        assert_eq!(f.loop_manager.calls(), vec!["set_markers(0.5, 2, 2.5)"]);
+    }
+
+    #[test]
+    fn opening_a_project_restores_its_loop_and_closing_clears_it() {
+        let f = with_project(Ok(()));
+        f.session.set_markers(1.0, 2.0).unwrap();
+        f.session.close_project().unwrap();
+        f.session
+            .open_project(&f.dir.join("song").join(PROJECT_FILE))
+            .unwrap();
+        f.session.close_project().unwrap();
+
+        assert_eq!(
+            *f.loop_manager.restored.lock().unwrap(),
+            vec![
+                None, // created
+                None, // closed
+                Some(LoopRange {
+                    start_sec: 1.0,
+                    end_sec: 2.0
+                }), // reopened
+                None, // closed
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failed_close_keeps_the_project_and_its_loop() {
+        // Added after review.
+        let f = with_project(Ok(()));
+        f.session.set_markers(1.0, 2.0).unwrap();
+        fs::remove_dir_all(f.dir.join("song")).unwrap(); // the save will fail
+
+        assert!(f.session.close_project().is_err());
+
+        assert!(f.session.is_project_open());
+        assert_eq!(*f.loop_manager.restored.lock().unwrap(), vec![None]); // created only
+    }
+
+    #[test]
+    fn opening_a_project_with_a_score_publishes_it() {
+        let f = with_project(Ok(()));
+        f.session
+            .import_stems(vec![PathBuf::from("/a/bass.wav")])
+            .unwrap();
+        f.session.close_project().unwrap();
+        // `score` is set by hand in the project file in v1.
+        let path = f.dir.join("song").join(PROJECT_FILE);
+        let mut project = saved(&f);
+        project.score = Some("song.cho".into());
+        fs::write(&path, serde_json::to_vec(&project).unwrap()).unwrap();
+
+        f.session.open_project(&path).unwrap();
+
+        assert_eq!(
+            *f.scores.published.lock().unwrap(),
+            vec![(f.dir.join("song"), "song.cho".to_string(), 2.5)]
+        );
+    }
+
+    #[test]
+    fn a_project_without_a_score_publishes_nothing() {
+        let f = with_project(Ok(()));
+        f.session.close_project().unwrap();
+        f.session
+            .open_project(&f.dir.join("song").join(PROJECT_FILE))
+            .unwrap();
+        assert!(f.scores.published.lock().unwrap().is_empty());
     }
 
     #[test]

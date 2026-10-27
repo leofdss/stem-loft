@@ -81,6 +81,15 @@ impl Default for MixerSettings {
 }
 
 impl Project {
+    /// The project's duration: its longest stem's `durationSec`, 0 with no
+    /// stems (docs/architecture.md#consistency-across-a-projects-stems).
+    pub fn duration_sec(&self) -> f64 {
+        self.stems
+            .iter()
+            .map(|s| s.duration_sec)
+            .fold(0.0, f64::max)
+    }
+
     /// A new, empty project: a fresh UUID v4 `id`, the current schema, no
     /// stems, score, loop or mixer settings.
     pub fn new_empty(name: &str) -> Self {
@@ -514,6 +523,21 @@ mod tests {
         assert!(path.exists());
         assert!(persistence.begin_checkpoint(t0, true).is_some());
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_project_duration_is_its_longest_stem() {
+        let mut project = Project::new_empty("x");
+        assert_eq!(project.duration_sec(), 0.0);
+        for (id, duration_sec) in [("bass", 186.9), ("guitar", 187.42), ("drums", 12.0)] {
+            project.stems.push(StemEntry {
+                id: id.into(),
+                file: format!("{id}.wav"),
+                duration_sec,
+                waveform_cache: None,
+            });
+        }
+        assert_eq!(project.duration_sec(), 187.42);
     }
 
     #[test]

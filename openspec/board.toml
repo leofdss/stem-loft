@@ -20,7 +20,7 @@ suitable_for = "agent"
 playbooks = ["rust-domain-module"]
 
 [task-004-loop-marker-manager]
-status = "backlog"
+status = "review"
 branch = "feat/loop-marker-manager"
 depends_on = ["TASK-003"]
 suitable_for = "agent"
@@ -69,14 +69,14 @@ suitable_for = "agent"
 playbooks = ["add-ipc-contract"]
 
 [task-011-cho-parser]
-status = "backlog"
+status = "review"
 branch = "feat/cho-parser"
 depends_on = []
 suitable_for = "agent"
 playbooks = ["chordpro-format"]
 
 [task-012-score-events]
-status = "backlog"
+status = "review"
 branch = "feat/score-events"
 depends_on = ["TASK-011"]
 suitable_for = "agent"
