@@ -15,16 +15,15 @@
 //! non-`-` characters on a line is one note in the playbook's `note`
 //! grammar, with its `.string` given by the line it sits on.
 
-// Not called by a `Command` yet: the `score_loaded`/`score_parse_error`
-// events and the call from `Session` land with TASK-012.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use serde::{Serialize, Serializer};
+
+use super::events::EventSink;
 
 /// A parsed `.cho` file -- the payload behind `score_loaded`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -154,11 +153,40 @@ impl fmt::Display for ScoreParseError {
 
 impl std::error::Error for ScoreParseError {}
 
-pub struct ScoreMetadataManager;
+pub struct ScoreMetadataManager {
+    events: Arc<dyn EventSink>,
+}
 
 impl ScoreMetadataManager {
-    pub fn new() -> Self {
-        Self
+    pub fn new(events: Arc<dyn EventSink>) -> Self {
+        Self { events }
+    }
+
+    /// Loads the project's score -- `score_file` as the project file
+    /// names it, relative to `project_dir` -- and publishes the result:
+    /// exactly one `score_loaded` (the parsed score, including
+    /// `tempo`/`time`/`tuning` from its header) or one `score_parse_error`
+    /// (line + message). A name that leaves the project folder (absolute,
+    /// or with `..`) is a `score_parse_error` on line 0. A broken score is
+    /// reported, never returned as a failure: the rest of the app keeps
+    /// working without it.
+    pub fn publish_score(&self, project_dir: &Path, score_file: &str, project_duration_sec: f64) {
+        let relative = Path::new(score_file);
+        let stays_inside = relative
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+        let result = if stays_inside && !score_file.is_empty() {
+            self.load_score(&project_dir.join(relative), project_duration_sec)
+        } else {
+            Err(ScoreParseError {
+                line: 0,
+                message: format!("score `{score_file}` must be a file inside the project folder"),
+            })
+        };
+        match result {
+            Ok(score) => self.events.score_loaded(&score),
+            Err(error) => self.events.score_parse_error(&error),
+        }
     }
 
     /// Reads and parses the `.cho` at `path`. `project_duration_sec` is the
@@ -184,12 +212,6 @@ impl ScoreMetadataManager {
             parser.line(raw, index as u32 + 1)?;
         }
         parser.finish()
-    }
-}
-
-impl Default for ScoreMetadataManager {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -793,13 +815,19 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
-    // The contract for TASK-011 (openspec/changes/task-011-cho-parser).
+    // The contract for TASK-011 (openspec/changes/task-011-cho-parser), plus
+    // TASK-012's publish_score tests at the end.
     // Written before the implementation, by a different author than it --
     // never loosen one of these to make it pass (AGENTS.md, testing policy).
     use super::*;
+    use crate::core::events::RecordedEvents;
+
+    fn manager() -> ScoreMetadataManager {
+        ScoreMetadataManager::new(Arc::new(RecordedEvents::default()))
+    }
 
     fn parse(text: &str, duration: f64) -> Result<Score, ScoreParseError> {
-        ScoreMetadataManager::new().parse(text, duration)
+        manager().parse(text, duration)
     }
 
     fn close(a: f64, b: f64) -> bool {
@@ -1409,7 +1437,7 @@ E|----------------------------------------------------------------|
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("song.cho");
         fs::write(&path, CHORDS_EXAMPLE).unwrap();
-        let manager = ScoreMetadataManager::new();
+        let manager = manager();
 
         assert_eq!(manager.load_score(&path, 12.0).unwrap().chords.len(), 4);
 
@@ -1419,5 +1447,56 @@ E|----------------------------------------------------------------|
         assert_eq!(missing.line, 0);
         assert!(missing.to_string().starts_with("line 0: "));
         fs::remove_dir_all(&dir).ok();
+    }
+
+    // ---- TASK-012: publishing --------------------------------------------
+
+    fn publish(text: &str) -> Vec<String> {
+        let dir = std::env::temp_dir().join(format!(
+            "stemloft-publish-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("song.cho"), text).unwrap();
+        let events = Arc::new(RecordedEvents::default());
+        ScoreMetadataManager::new(events.clone()).publish_score(&dir, "song.cho", 12.0);
+        fs::remove_dir_all(&dir).ok();
+        let recorded = events.events.lock().unwrap().clone();
+        recorded
+    }
+
+    #[test]
+    fn a_parsed_score_is_published_once_with_its_header() {
+        assert_eq!(
+            publish(CHORDS_EXAMPLE),
+            vec!["score_loaded(chords=4, tempo=Some(80.0))"]
+        );
+    }
+
+    #[test]
+    fn a_broken_score_publishes_one_parse_error_with_its_line() {
+        assert_eq!(
+            publish("{title: x}\n{t: 1:5.3}\n"),
+            vec!["score_parse_error(line 2: invalid time anchor {t: 1:5.3}: expected `m:ss.cc`, got `1:5.3`)"]
+        );
+    }
+
+    #[test]
+    fn a_score_outside_the_project_folder_is_a_parse_error() {
+        // Added after review.
+        for name in ["/etc/passwd", "../other/song.cho", "", "sub/../../x.cho"] {
+            let events = Arc::new(RecordedEvents::default());
+            ScoreMetadataManager::new(events.clone()).publish_score(Path::new("/tmp"), name, 1.0);
+            let recorded = events.events.lock().unwrap().clone();
+            assert_eq!(recorded.len(), 1, "{name}");
+            assert!(
+                recorded[0].starts_with("score_parse_error(line 0:"),
+                "{name}: {recorded:?}"
+            );
+        }
     }
 }

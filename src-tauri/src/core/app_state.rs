@@ -15,6 +15,8 @@
 use std::sync::Arc;
 
 use super::audio_engine::AudioEngine;
+use super::command_queue::CommandQueue;
+use super::events::EventSink;
 use super::loop_manager::LoopManager;
 use super::persistence::ProjectPersistence;
 use super::score_metadata::ScoreMetadataManager;
@@ -22,6 +24,9 @@ use super::session::Session;
 use super::stem_importer::StemImporter;
 
 pub struct AppState {
+    /// Every `Command` runs through this, one at a time, in arrival order
+    /// (docs/architecture.md#design-note-commands-queue-in-the-rust-core).
+    pub queue: CommandQueue,
     pub session: Session,
 }
 
@@ -30,12 +35,14 @@ impl AppState {
     /// explicitly and handed only the `Arc`s it needs, once, here -- the
     /// same mental model as a Nest.js module's providers array, minus the
     /// container.
-    pub fn new() -> Self {
+    /// `events` is how the core publishes `Events`; the IPC layer passes
+    /// its Tauri implementation (`ipc::events::TauriEvents`).
+    pub fn new(events: Arc<dyn EventSink>) -> Self {
         let persistence = Arc::new(ProjectPersistence::new());
         let stem_importer = Arc::new(StemImporter::new(Arc::clone(&persistence)));
         let loop_manager = Arc::new(LoopManager::new());
         let audio_engine = Arc::new(AudioEngine::new(Arc::clone(&loop_manager)));
-        let score_metadata = Arc::new(ScoreMetadataManager::new());
+        let score_metadata = Arc::new(ScoreMetadataManager::new(events));
 
         let session = Session::new(
             stem_importer,
@@ -45,7 +52,10 @@ impl AppState {
             score_metadata,
         );
 
-        Self { session }
+        Self {
+            queue: CommandQueue::new(),
+            session,
+        }
     }
 }
 
@@ -55,6 +65,7 @@ mod tests {
 
     #[test]
     fn a_fresh_app_state_starts_with_no_project_open() {
-        assert!(!AppState::new().session.is_project_open());
+        let events = Arc::new(crate::core::events::RecordedEvents::default());
+        assert!(!AppState::new(events).session.is_project_open());
     }
 }

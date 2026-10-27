@@ -69,6 +69,42 @@ pub struct MixerSettings {
     pub solo: bool,
 }
 
+/// A stem nobody has touched yet: full volume, not muted, not soloed.
+impl Default for MixerSettings {
+    fn default() -> Self {
+        MixerSettings {
+            volume: 1.0,
+            mute: false,
+            solo: false,
+        }
+    }
+}
+
+impl Project {
+    /// The project's duration: its longest stem's `durationSec`, 0 with no
+    /// stems (docs/architecture.md#consistency-across-a-projects-stems).
+    pub fn duration_sec(&self) -> f64 {
+        self.stems
+            .iter()
+            .map(|s| s.duration_sec)
+            .fold(0.0, f64::max)
+    }
+
+    /// A new, empty project: a fresh UUID v4 `id`, the current schema, no
+    /// stems, score, loop or mixer settings.
+    pub fn new_empty(name: &str) -> Self {
+        Project {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_owned(),
+            stems: Vec::new(),
+            score: None,
+            loop_range: None,
+            mixer: BTreeMap::new(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum LoadError {
     Io(io::Error),
@@ -253,14 +289,30 @@ impl ProjectPersistence {
         now: Instant,
         definitive: bool,
     ) -> io::Result<bool> {
-        let Some(token) = self.scheduler().begin_write(now, definitive) else {
+        let Some(token) = self.begin_checkpoint(now, definitive) else {
             return Ok(false);
         };
-        // Lock released: the write itself runs without it, so a change that
-        // arrives meanwhile is recorded and keeps the project dirty.
+        self.write_checkpoint(path, project, token)?;
+        Ok(true)
+    }
+
+    /// First half of [`Self::checkpoint`], for a caller that keeps the
+    /// project behind its own lock: call it *under* that lock, together with
+    /// taking the snapshot, so the token covers exactly the changes in the
+    /// snapshot. `None` when there's nothing to write yet.
+    pub fn begin_checkpoint(&self, now: Instant, definitive: bool) -> Option<u64> {
+        self.scheduler().begin_write(now, definitive)
+    }
+
+    /// Second half: writes the snapshot (after the caller released its
+    /// lock) and clears the dirty flag unless a change came in since
+    /// `token`. A failed write stays dirty.
+    pub fn write_checkpoint(&self, path: &Path, project: &Project, token: u64) -> io::Result<()> {
+        // The scheduler lock is released here: a change that arrives during
+        // the write is recorded and keeps the project dirty.
         self.save_project(path, project)?;
         self.scheduler().finish_write(token);
-        Ok(true)
+        Ok(())
     }
 
     /// Writes `contents` to `path` atomically: a unique temp file in the same

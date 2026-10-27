@@ -21,3 +21,17 @@ Os marcadores atuais SHALL ficar expostos para o audio engine, que faz o loop da
 #### Scenario: Novos marcadores durante a reprodução
 - **WHEN** os marcadores mudam enquanto a música toca
 - **THEN** a próxima volta do loop usa os novos marcadores
+
+### Requirement: Loops bem formados
+O núcleo MUST rejeitar um loop cujos limites não são números finitos, cujo início é negativo ou não vem antes do fim, ou definido enquanto a duração do projeto é desconhecida, deixando o loop atual como está.
+
+#### Scenario: Início depois do fim
+- **WHEN** marcadores com startSec igual ou depois de endSec são definidos
+- **THEN** eles são rejeitados e os marcadores anteriores continuam valendo
+
+### Requirement: O loop acompanha o projeto aberto
+Abrir um projeto SHALL restaurar o loop salvo nele quando ele ainda cabe na duração do projeto e descartá-lo caso contrário, nunca recortando; criar ou fechar um projeto SHALL limpar o loop atual.
+
+#### Scenario: Reabrir um projeto
+- **WHEN** um projeto salvo com um loop é aberto
+- **THEN** esse loop é o loop atual
