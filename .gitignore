@@ -1,5 +1,9 @@
 docs/.obsidian/workspace.json
 node_modules/
+# Linked git worktrees, one per change being worked on in parallel
+# (AGENTS.md, "Working in parallel") -- kept inside the checkout so tools
+# scoped to it can reach them.
+.worktrees/
 __pycache__/
 *.pyc
 

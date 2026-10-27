@@ -337,6 +337,25 @@ class CheckFrozenTests(unittest.TestCase):
             f.write_text("pub fn a() {}\n")
             self.assertEqual(check_frozen.compare(f, "#[cfg(test)]", "HEAD")[0], 2)
 
+    def test_rustfmt_reformatting_alone_is_not_a_change(self):
+        import shutil
+        if shutil.which("rustfmt") is None:
+            self.skipTest("rustfmt not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.repo_with_contract(Path(tmp))
+            f.write_text(f.read_text().replace(
+                "mod tests { #[test] fn t() { assert_eq!(1, 1); } }",
+                "mod tests {\n    #[test]\n    fn t() {\n        assert_eq!(1, 1);\n    }\n}"))
+            code, message = check_frozen.compare(f, "#[cfg(test)]", "HEAD")
+            self.assertEqual(code, 0, message)
+            self.assertIn("formatting only", message)
+
+    def test_a_real_edit_still_fails_after_rustfmt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.repo_with_contract(Path(tmp))
+            f.write_text(f.read_text().replace("assert_eq!(1, 1);", "assert_eq!(1, 1) ;  // ok\n"))
+            self.assertEqual(check_frozen.compare(f, "#[cfg(test)]", "HEAD")[0], 1)
+
     def test_an_uncommitted_contract_cant_be_checked(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.repo_with_contract(Path(tmp))
@@ -347,3 +366,93 @@ class CheckFrozenTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RemoteWorktreeTests(unittest.TestCase):
+    """distrobox/remote/lib.sh and check_remote_image.py, run from a linked
+    git worktree: host.local comes from the main checkout, and the remote
+    copy gets its own directory."""
+
+    def make_repo_with_worktree(self, root: Path) -> tuple[Path, Path]:
+        import shutil
+        import subprocess
+        main = root / "main"
+        (main / "distrobox" / "remote").mkdir(parents=True)
+        shutil.copy(Path(__file__).resolve().parents[2] / "distrobox" / "remote" / "lib.sh",
+                    main / "distrobox" / "remote" / "lib.sh")
+        def git(*args, cwd=main):
+            subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+        git("init", "-q")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        git("config", "commit.gpgsign", "false")
+        git("config", "core.hooksPath", "/dev/null")
+        git("add", ".")
+        git("commit", "-q", "-m", "chore: init")
+        (main / "distrobox" / "remote" / "host.local").write_text(
+            "export STEMLOFT_REMOTE_HOST=me@box\nexport STEMLOFT_REMOTE_PATH=/srv/stem-loft/\n")
+        worktree = root / "wt-cho"
+        git("worktree", "add", "-q", str(worktree))
+        return main, worktree
+
+    def source_lib(self, checkout: Path) -> str:
+        import subprocess
+        return subprocess.run(
+            ["bash", "-c", 'source "$1/distrobox/remote/lib.sh" && '
+             'printf "%s|%s|%s" "$STEMLOFT_REMOTE_HOST" "$REMOTE_ROOT" "$STEMLOFT_IS_WORKTREE"',
+             "_", str(checkout)],
+            capture_output=True, text=True, check=True).stdout
+
+    def test_main_checkout_uses_the_configured_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            main, _ = self.make_repo_with_worktree(Path(tmp))
+            self.assertEqual(self.source_lib(main), "me@box|/srv/stem-loft|0")
+
+    def test_worktree_reads_main_host_local_and_gets_its_own_remote_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, worktree = self.make_repo_with_worktree(Path(tmp))
+            self.assertEqual(self.source_lib(worktree),
+                             "me@box|/srv/stem-loft-worktrees/wt-cho|1")
+
+    def test_image_check_finds_host_local_from_a_worktree(self):
+        import check_remote_image
+        with tempfile.TemporaryDirectory() as tmp:
+            main, worktree = self.make_repo_with_worktree(Path(tmp))
+            saved = check_remote_image.REPO_ROOT, check_remote_image.HOST_LOCAL
+            try:
+                check_remote_image.REPO_ROOT = worktree
+                check_remote_image.HOST_LOCAL = worktree / "distrobox" / "remote" / "host.local"
+                self.assertEqual(check_remote_image.host_local_path().resolve(),
+                                 (main / "distrobox" / "remote" / "host.local").resolve())
+                self.assertEqual(check_remote_image.read_remote_host(), "me@box")
+            finally:
+                check_remote_image.REPO_ROOT, check_remote_image.HOST_LOCAL = saved
+
+
+class CheckChangedRemoteTests(unittest.TestCase):
+    """check_changed.py's post-edit cargo check goes to the remote build
+    host only when one is configured and answers; otherwise it runs
+    locally, silently."""
+
+    def test_local_checks_env_forces_local(self):
+        import os
+        import check_changed
+        os.environ["STEMLOFT_LOCAL_CHECKS"] = "1"
+        try:
+            self.assertIsNone(check_changed.remote_runner(Path(__file__).resolve().parents[2]))
+        finally:
+            del os.environ["STEMLOFT_LOCAL_CHECKS"]
+
+    def test_no_host_configured_means_local(self):
+        import shutil
+        import check_changed
+        with tempfile.TemporaryDirectory() as tmp:
+            remote = Path(tmp) / "distrobox" / "remote"
+            remote.mkdir(parents=True)
+            shutil.copy(Path(__file__).resolve().parents[2] / "distrobox" / "remote" / "lib.sh", remote / "lib.sh")
+            self.assertIsNone(check_changed.remote_runner(Path(tmp)))
+
+    def test_no_remote_scripts_means_local(self):
+        import check_changed
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(check_changed.remote_runner(Path(tmp)))

@@ -114,6 +114,10 @@ Without `REMOTE_AVAILABLE=1`, just run the equivalent command locally
 commands, same working directories, just no `distrobox/remote/run.sh`
 wrapper and no `--dir` flag.
 
+`scripts/check_changed.py` (the per-edit check every tool's hook calls)
+already follows this playbook for its `cargo check`: remote when the host
+answers, local otherwise; `STEMLOFT_LOCAL_CHECKS=1` forces local.
+
 ## Local models on the same host
 
 The host may also run a local-model server (Ollama on its GPU). That's a
