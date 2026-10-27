@@ -34,7 +34,7 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 LINK_RE = re.compile(r"!?\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 FENCE_RE = re.compile(r"^\s*```")
 
-EXCLUDED_DIR_MARKERS = ("/.git/", "/node_modules/", "/.obsidian/")
+EXCLUDED_DIR_MARKERS = ("/.git/", "/node_modules/", "/.obsidian/", "/.worktrees/")
 
 INLINE_CODE_RE = re.compile(r"`([^`]*)`")
 BOLD_RE = re.compile(r"\*\*([^*]*)\*\*")

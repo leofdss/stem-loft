@@ -32,7 +32,8 @@ sed "s/@BIND_ADDR@/$BIND_ADDR/" "$DIR/ollama.container.in" |
   ssh "$STEMLOFT_REMOTE_HOST" 'mkdir -p ~/.config/containers/systemd && cat > ~/.config/containers/systemd/stemloft-ollama.container'
 ssh "$STEMLOFT_REMOTE_HOST" 'systemctl --user daemon-reload && systemctl --user restart stemloft-ollama.service'
 
-# Keep the service up while nobody is logged in. Needs no root for your own
+# Let the service run (once started on demand) while nobody is logged in
+# on the host. Needs no root for your own
 # user on most distros; if polkit refuses, say so instead of failing.
 if ! ssh "$STEMLOFT_REMOTE_HOST" 'loginctl show-user "$USER" -p Linger | grep -q yes || loginctl enable-linger "$USER"' 2>/dev/null; then
   echo "note: couldn't enable lingering -- run 'sudo loginctl enable-linger \$USER' on the host," >&2
@@ -55,5 +56,8 @@ if [[ $PULL -eq 1 ]]; then
 fi
 
 echo
-echo "Done. Point local tooling at it with, in distrobox/remote/host.local:"
+# On-demand only: stop it again until someone needs it (power.sh up ollama).
+ssh "$STEMLOFT_REMOTE_HOST" 'systemctl --user stop stemloft-ollama.service'
+echo "Installed and stopped. Start it with: distrobox/remote/power.sh up ollama"
+echo "Point local tooling at it with, in distrobox/remote/host.local:"
 echo "  export STEMLOFT_OLLAMA_URL=http://$BIND_ADDR:11434"

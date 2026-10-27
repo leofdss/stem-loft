@@ -21,6 +21,15 @@ fi
 
 "$DIR/sync.sh"
 
+# Stop the build container again when this pass ends, pass or fail -- the
+# host is shared with other uses (see power.sh). An orchestrator running
+# several passes in parallel (one per worktree) sets
+# STEMLOFT_KEEP_BUILD_UP=1 so one pass ending doesn't stop the container
+# under the others, and runs `power.sh down build` itself at the end.
+if [[ -z "${STEMLOFT_KEEP_BUILD_UP:-}" ]]; then
+  trap '"$DIR/power.sh" down build >/dev/null' EXIT
+fi
+
 echo
 echo "== scripts/verify.sh on the remote host"
 "$DIR/run.sh" scripts/verify.sh

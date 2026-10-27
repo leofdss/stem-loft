@@ -88,12 +88,57 @@ def rel(path: Path) -> str:
         return path.as_posix()
 
 
+def remote_runner(checkout: Path) -> list[str] | None:
+    """`distrobox/remote/run.sh` of `checkout` (the main clone or a linked
+    worktree) when its remote build host is configured and answers, after
+    syncing the checkout there -- the `remote-build-offload` playbook, so a
+    post-edit `cargo check` doesn't spend the local CPU. None means "run
+    locally": no host configured, host unreachable, sync failed, or
+    STEMLOFT_LOCAL_CHECKS is set (run.sh sets it on the remote side)."""
+    if os.environ.get("STEMLOFT_LOCAL_CHECKS"):
+        return None
+    remote = checkout / "distrobox" / "remote"
+    if not (remote / "lib.sh").is_file():
+        return None
+    host = subprocess.run(
+        ["bash", "-c", 'source "$1" && printf %s "${STEMLOFT_REMOTE_HOST:-}"', "_", str(remote / "lib.sh")],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if not host:
+        return None
+    try:
+        probe = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", host, "true"],
+            capture_output=True,
+            timeout=10,
+        )
+        if probe.returncode != 0 or run([str(remote / "sync.sh")], checkout).returncode != 0:
+            return None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return [str(remote / "run.sh")]
+
+
+def checkout_of(path: Path) -> Path:
+    r = subprocess.run(["git", "-C", str(path), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    return Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else ROOT
+
+
 def check_rust(paths: list[Path], f: Findings) -> None:
     crates = {c for p in paths if p.suffix == ".rs" for c in [find_upwards(p.parent, "Cargo.toml")] if c}
-    if not crates or shutil.which("cargo") is None:
+    if not crates:
         return
     for crate in sorted(crates):
-        r = run(["cargo", "check", "--quiet", "--message-format=short"], crate)
+        cargo = ["cargo", "check", "--quiet", "--message-format=short"]
+        checkout = checkout_of(crate)
+        runner = remote_runner(checkout)
+        if runner is not None:
+            r = run([*runner, "--dir", crate.relative_to(checkout).as_posix(), *cargo], checkout)
+        elif shutil.which("cargo") is not None:
+            r = run(cargo, crate)
+        else:
+            continue
         if r.returncode != 0:
             f.error(f"cargo check failed in {rel(crate)}:\n{r.stdout}{r.stderr}")
 
@@ -177,6 +222,8 @@ def check_generated(paths: list[Path], f: Findings) -> None:
 
 def check_readme_notes(paths: list[Path], f: Findings) -> None:
     for r in (rel(p) for p in paths):
+        if r.endswith(".local.md") or ".local/" in r:  # personal, gitignored notes
+            continue
         if r.startswith(README_WATCHED_PREFIXES):
             f.note(f"README.md may need a matching update after this change to {r} -- check its summary is still accurate.")
 

@@ -46,13 +46,29 @@ CONTAINER = "stemloft"
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
 
 
+def host_local_path() -> Path:
+    """host.local is gitignored, so a linked git worktree has none of its
+    own: use the main checkout's, like distrobox/remote/lib.sh does."""
+    if HOST_LOCAL.is_file():
+        return HOST_LOCAL
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return Path(result.stdout.strip()).parent / "distrobox" / "remote" / "host.local"
+    return HOST_LOCAL
+
+
 def read_remote_host() -> Optional[str]:
     """STEMLOFT_REMOTE_HOST from host.local, sourced by bash exactly the
     way run.sh/sync.sh source it."""
-    if not HOST_LOCAL.is_file():
+    host_local = host_local_path()
+    if not host_local.is_file():
         return None
     result = subprocess.run(
-        ["bash", "-c", 'source "$1" && printf %s "$STEMLOFT_REMOTE_HOST"', "_", str(HOST_LOCAL)],
+        ["bash", "-c", 'source "$1" && printf %s "$STEMLOFT_REMOTE_HOST"', "_", str(host_local)],
         capture_output=True,
         text=True,
     )

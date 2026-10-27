@@ -114,6 +114,10 @@ Without `REMOTE_AVAILABLE=1`, just run the equivalent command locally
 commands, same working directories, just no `distrobox/remote/run.sh`
 wrapper and no `--dir` flag.
 
+`scripts/check_changed.py` (the per-edit check every tool's hook calls)
+already follows this playbook for its `cargo check`: remote when the host
+answers, local otherwise; `STEMLOFT_LOCAL_CHECKS=1` forces local.
+
 ## Local models on the same host
 
 The host may also run a local-model server (Ollama on its GPU). That's a
@@ -122,6 +126,14 @@ separate, equally optional service: probe it with
 like an unreachable build host — fall back, don't report it as an error.
 What to hand it, and what never to, is in AGENTS.md ("Choosing who does
 the work").
+
+## When you're done: power down
+
+The host is usually someone's own machine. At the end of a work session run
+`distrobox/remote/power.sh down` — it stops the local-model service and
+the build container (`check.sh` already stops the container after its own
+pass). Nothing on the host starts by itself; `power.sh up [ollama|build]`
+brings things back.
 
 ## Checklist
 
@@ -134,5 +146,6 @@ the work").
 - [ ] Only sent GUI-free, audio-free work (check/clippy/test/build) to the
       remote host — never `cargo tauri dev` or anything needing the
       screen/speakers?
+- [ ] Ran `distrobox/remote/power.sh down` at the end of the session?
 - [ ] Fell back to the exact same commands run locally, without treating
       "no remote host" as an error to report?

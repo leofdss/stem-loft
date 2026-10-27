@@ -42,10 +42,17 @@ INLINE_M_RE = re.compile(r"""-m\s+["']([^"']+)["']""")
 
 
 def extract_commit_message(cmd: str) -> str | None:
-    heredoc = HEREDOC_RE.search(cmd)
-    if heredoc:
-        return heredoc.group(2)
-    inline = INLINE_M_RE.search(cmd)
+    """The message of the `git commit` in `cmd`: a heredoc opened on the
+    commit's own line (`git commit -F- <<EOF`, `-m "$(cat <<EOF`), else the
+    first `-m` after the commit. Any other heredoc in the same command (a
+    script fed to python3 before committing) is not the message."""
+    for heredoc in HEREDOC_RE.finditer(cmd):
+        line_start = cmd.rfind("\n", 0, heredoc.start()) + 1
+        if GIT_COMMIT_RE.search(cmd[line_start:heredoc.start()]):
+            return heredoc.group(2)
+    stripped = HEREDOC_RE.sub("", cmd)
+    commit = GIT_COMMIT_RE.search(stripped)
+    inline = INLINE_M_RE.search(stripped, commit.end()) if commit else None
     return inline.group(1) if inline else None
 
 
