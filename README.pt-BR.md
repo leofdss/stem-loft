@@ -93,6 +93,33 @@ próprio Angular traz). Isso inicia o servidor de dev do Angular e abre a
 janela do app — hoje, as telas de estado vazio que o esqueleto já traz,
 já que nenhuma lógica de domínio do núcleo Rust está implementada ainda.
 
+### Depurando no VS Code
+
+Abra a raiz do repositório no VS Code do container (`code .`, ou o atalho
+"Visual Studio Code (on stemloft)") e instale as extensões recomendadas
+que ele sugerir (rust-analyzer, CodeLLDB, Angular Language Service). O
+`.vscode/launch.json` tem três configurações:
+
+- **Tauri: debug Rust core** — inicia o servidor de dev do Angular, compila
+  o binário de dev e o roda sob o CodeLLDB: breakpoints em `src-tauri/`
+  param enquanto você usa a janela real do app.
+- **Rust: debug unit tests** — os testes `#[cfg(test)]` do núcleo sob o
+  CodeLLDB.
+- **Angular: debug unit tests** — a suíte `.spec.ts` (Vitest + jsdom) sob
+  o depurador Node do VS Code: breakpoints em `ui/src/` param quando os
+  testes exercitam aquele código.
+
+Breakpoints no código Angular *dentro da janela do app rodando* não podem
+vir do VS Code no Linux: o Tauri renderiza via WebKitGTK, que não fala o
+protocolo Chrome DevTools de que o depurador JavaScript do VS Code precisa
+(só o WebView2 do Windows fala). Use o inspetor do próprio WebView —
+clique direito na janela → **Inspect Element** (habilitado em builds de
+debug) → **Sources**: os arquivos TypeScript aparecem ali pelos source maps
+do servidor de dev, e breakpoints colocados ali pausam o app. Os dois
+depuradores funcionam ao mesmo tempo: rode **Tauri: debug Rust core** e
+abra o inspetor na janela dele para seguir um `Command` do Angular até o
+Rust.
+
 ### Documentação
 
 - [`docs/architecture.md`](docs/architecture.md) — arquitetura completa: componentes, contrato de IPC, o formato `.cho`, fluxos de dados.

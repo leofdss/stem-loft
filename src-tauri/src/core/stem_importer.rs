@@ -104,6 +104,13 @@ impl StemImporter {
         Self { persistence }
     }
 
+    /// Imports one or more stem files into the current project. Still a
+    /// stub: the `Command` path (which project is open, saving the new
+    /// entries) is wired by TASK-009 on top of [`Self::import`].
+    pub fn import_stems(&self, _file_paths: Vec<PathBuf>) -> Result<(), String> {
+        Err("import_stems: not yet implemented".into())
+    }
+
     /// Copies `files` into `project_dir` and returns their new
     /// `StemEntry`s (the caller adds them to the project and marks it
     /// dirty). All or nothing:
@@ -112,13 +119,13 @@ impl StemImporter {
     ///    first new file's; any file that differs fails the whole import
     ///    with `SampleRateMismatch` before anything is written.
     /// 2. Each file gets an id from [`stem_id`] (unique among `existing`,
-    ///    this import and the files already in `project_dir`) and is
-    ///    written to `project_dir/<id>.wav` through
+    ///    this import and the files already in `project_dir`) and is written to `project_dir/<id>.wav` through
     ///    `ProjectPersistence::atomic_write_with`: a mono file upmixed by
     ///    [`write_upmixed`], a stereo one copied byte for byte.
     /// 3. If a write fails, the files this call already wrote are removed
     ///    again (best effort: a file that can't be removed stays, and a
     ///    later import picks another id), and the error is returned.
+    #[allow(dead_code)] // called from Session once TASK-009 wires the Command
     pub fn import(
         &self,
         project_dir: &Path,
@@ -237,7 +244,7 @@ fn read_exact_or(file: &mut File, buf: &mut [u8], what: &str) -> Result<(), Stri
 /// not RIFF/WAVE, a missing chunk, any other format, `block_align` not
 /// `channels * bits_per_sample / 8`, a zero sample rate or channel count,
 /// or a `data` chunk running past the end of the file.
-fn read_wav_header(file: &mut File) -> Result<WavInfo, String> {
+pub(crate) fn read_wav_header(file: &mut File) -> Result<WavInfo, String> {
     let file_len = file
         .metadata()
         .map_err(|e| format!("can't read the file size: {e}"))?

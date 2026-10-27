@@ -14,3 +14,4 @@ pub mod persistence;
 pub mod score_metadata;
 pub mod session;
 pub mod stem_importer;
+pub mod waveform;

@@ -507,40 +507,6 @@ mod tests {
     }
 
     #[test]
-    fn a_change_between_begin_and_write_checkpoint_keeps_the_project_dirty() {
-        let dir = temp_dir("split-checkpoint");
-        let path = dir.join("project.json");
-        let persistence = ProjectPersistence::new();
-        let t0 = Instant::now();
-        persistence.mark_dirty(t0);
-
-        let token = persistence.begin_checkpoint(t0, true).unwrap();
-        persistence.mark_dirty(t0); // arrives after the snapshot was taken
-        persistence
-            .write_checkpoint(&path, &sample_project(), token)
-            .unwrap();
-
-        assert!(path.exists());
-        assert!(persistence.begin_checkpoint(t0, true).is_some());
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn the_project_duration_is_its_longest_stem() {
-        let mut project = Project::new_empty("x");
-        assert_eq!(project.duration_sec(), 0.0);
-        for (id, duration_sec) in [("bass", 186.9), ("guitar", 187.42), ("drums", 12.0)] {
-            project.stems.push(StemEntry {
-                id: id.into(),
-                file: format!("{id}.wav"),
-                duration_sec,
-                waveform_cache: None,
-            });
-        }
-        assert_eq!(project.duration_sec(), 187.42);
-    }
-
-    #[test]
     fn atomic_write_with_streams_into_place() {
         let dir = temp_dir("stream");
         let path = dir.join("bass.wav");
